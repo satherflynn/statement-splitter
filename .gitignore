@@ -1,0 +1,10 @@
+venv/
+build/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+appicon.iconset/
+# Never commit a real statement — they contain Steve's financial data.
+*.pdf
+!Install Guide (Mac).pdf

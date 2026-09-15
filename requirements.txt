@@ -1,0 +1,5 @@
+pypdf
+# Only needed to (re)draw the app icon and to build the Mac .app:
+Pillow
+py2app
+reportlab
