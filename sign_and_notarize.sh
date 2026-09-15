@@ -12,8 +12,10 @@
 #   - "Developer ID Application: Sather Flynn (MW9D3L254H)" in the login keychain
 #   - xcrun notarytool store-credentials statement-splitter-notary
 #
-# Usage:  ./sign_and_notarize.sh          (after: python setup.py py2app --no-strip)
+# Usage:  ./sign_and_notarize.sh              (after: python setup.py py2app --no-strip)
+#         ./sign_and_notarize.sh --sign-only  (sign the .app and stop; no DMG, no Apple)
 set -euo pipefail
+SIGN_ONLY=0; [ "${1:-}" = "--sign-only" ] && SIGN_ONLY=1
 
 APP_NAME="Statement Splitter"
 TEAM_ID="MW9D3L254H"
@@ -50,6 +52,7 @@ echo "Signing the app…"
 sign "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 echo "App signature verified."
+if [ "$SIGN_ONLY" = "1" ]; then echo "(--sign-only: stopping here)"; exit 0; fi
 
 # --- 2. DMG
 GUIDE_FLAGS=--notarized ./build_dmg.sh

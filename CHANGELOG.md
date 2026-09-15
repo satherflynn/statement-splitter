@@ -1,5 +1,11 @@
 # What's new
 
+## 1.1 — September 15, 2026
+
+Signed with an Apple Developer ID and notarized by Apple, so the app opens
+on any Mac with no security warning and no "Open Anyway" step. No change to
+how the splitting works.
+
 ## 1.0 — September 14, 2026
 
 First release. Splits an AppFolio "Owner Packet" PDF into one file per
