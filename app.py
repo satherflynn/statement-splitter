@@ -151,15 +151,16 @@ class App(tk.Tk):
         self.after(800, self._start_update_check)
 
         # Step 1 — the PDF
-        c1 = self._card(outer, "1.  The monthly statement")
-        self.source_label = ttk.Label(c1, text="No file chosen yet.", style="Value.TLabel", wraplength=560)
+        c1 = self._card(outer, "1.  The statement to split")
+        self.source_label = ttk.Label(c1, text="The monthly owner packet you download from AppFolio. No file chosen yet.",
+                                      style="Value.TLabel", wraplength=560)
         self.source_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Button(c1, text="Choose PDF…", style="Action.TButton", width=13,
                    command=self.choose_pdf).grid(row=0, column=1, rowspan=2, sticky="e", padx=(12, 0))
         c1.columnconfigure(0, weight=1)
 
         # Step 2 — the destination
-        c2 = self._card(outer, "2.  Where to file the pages")
+        c2 = self._card(outer, "2.  Where to keep the property folders")
         self.dest_label = ttk.Label(c2, text=pretty_path(self.destination), style="Value.TLabel", wraplength=560)
         self.dest_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Button(c2, text="Change…", style="Action.TButton", width=13,
