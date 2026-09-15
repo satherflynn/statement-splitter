@@ -22,9 +22,20 @@ run commands directly.
   returns a `SplitPlan` (sections + month + warnings); `write_split()` writes
   the files; `describe_plan()` renders a plain-English summary. Runnable from
   the terminal for testing (`python splitter.py packet.pdf [dest]`).
+- `ledger.py` — reads the *figures* off a property's pages using word
+  positions (fixed AppFolio columns; wrapped payees/descriptions are re-joined
+  to the nearest dated row). Owner Statement ledger + cash/bills, Income
+  Statement totals, Rent Roll (tenant, rent, recurring, past due, status).
+- `summary.py` — stores one JSON per month under
+  `<dest>/Monthly Summary/data/`, runs the checks (`compare()`), and builds
+  `Monthly Summary.xlsx` (What changed / This month / History / Ledger).
+  Management fee % is measured against *scheduled* rent (rent roll rent +
+  recurring), because the manager charges on scheduled rent whether or not
+  the tenant paid. "Section 8 Rent" counts as rent.
 - `app.py` — the Tkinter window. Two cards (PDF, destination), one button,
-  a results box. Destination remembered in
-  `~/Library/Application Support/Statement Splitter/settings.json`.
+  a results box that shows *what changed* first, then the filing list;
+  buttons to open the summary workbook and the folder. Destination remembered
+  in `~/Library/Application Support/Statement Splitter/settings.json`.
 - `version.py` — `APP_VERSION` (bump with a CHANGELOG entry) + build date.
 - `setup.py` — py2app, **standalone** build (bundles Python + Tk).
 - `build_dmg.sh` — wraps the .app + Install Guide in a DMG.
@@ -34,7 +45,9 @@ run commands directly.
   shows a Download banner if it's newer than `APP_VERSION`. Fails silently offline.
 - `sign_and_notarize.sh` + `entitlements.plist` — Developer ID signing and
   Apple notarization of the .app and .dmg (see "Releasing" below).
-- `make_sample_packet.py` / `test_splitter.py` — fictional test packet + regression test.
+- `make_sample_packet.py` / `test_splitter.py` — two fictional months (July,
+  August) drawn in AppFolio's real column positions with planted differences;
+  the test asserts both the split and the comparison flags.
 
 ## Releasing a new version
 
@@ -65,6 +78,8 @@ Income Statement page 2) have no code and inherit the current section.
 
 Validated 2026-09-14 against a real August 2026 packet: 69 pages → 17
 sections (16 real + one phantom `… (duplicate)`), every page accounted for.
+2026-09-15: every real property's ledger reconciled to the cent
+(beginning + income − expense = ending) with the position-based reader.
 One code number is skipped in the sequence; that's why 17 codes = 16 + 1.
 `make_sample_packet.py` builds a fictional packet with the same layout and
 `test_splitter.py` checks the split against it — run that after any change.

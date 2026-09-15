@@ -19,7 +19,12 @@ DATA_FILES = [(".", ["appicon_128.png", "CHANGELOG.md"])]
 OPTIONS = {
     "argv_emulation": False,
     "iconfile": "appicon.icns",
-    "packages": ["pypdf", "certifi"],
+    "packages": ["pypdf", "certifi", "openpyxl", "et_xmlfile"],
+    # pypdf *optionally* imports Pillow, so py2app drags it in along with a
+    # dozen image libraries — some end up inside the python zip where they
+    # cannot be code-signed, and Apple's notary service rejects the app.
+    # The splitter never touches images, so leave all of that out.
+    "excludes": ["PIL", "reportlab", "py2app", "setuptools", "pip", "test", "unittest"],
     "includes": ["tkinter"],
     "plist": {
         "CFBundleName": APP_NAME,

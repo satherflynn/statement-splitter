@@ -48,6 +48,14 @@ find "$APP/Contents/Frameworks" "$APP/Contents/Resources" -type f -perm -u+x ! -
 for fw in "$APP"/Contents/Frameworks/*.framework; do
   [ -d "$fw" ] && sign "$fw"
 done
+# py2app puts a helper interpreter ("python") next to the main executable in
+# Contents/MacOS. Everything there except the main executable must be signed
+# on its own — the main one is signed as part of the bundle below.
+MAIN_EXE="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")"
+for f in "$APP"/Contents/MacOS/*; do
+  [ "$(basename "$f")" = "$MAIN_EXE" ] && continue
+  if file "$f" | grep -q "Mach-O"; then sign "$f"; fi
+done
 echo "Signing the app…"
 sign "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"

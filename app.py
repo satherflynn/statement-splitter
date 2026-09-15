@@ -24,7 +24,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from pypdf import PdfReader
+
 from splitter import plan_split, write_split, describe_plan
+from summary import update_summary, SummaryResult
 from update_check import newer_release
 from version import APP_NAME, APP_VERSION, resource_base, version_line
 
@@ -85,8 +88,8 @@ class App(tk.Tk):
         super().__init__()
         self.title(APP_NAME)
         self.configure(bg=BG)
-        self.minsize(640, 560)
-        self.geometry("720x620")
+        self.minsize(660, 600)
+        self.geometry("760x680")
 
         self.settings = load_settings()
         self.source: Path | None = None
@@ -136,7 +139,7 @@ class App(tk.Tk):
         titles.pack(side="left", fill="x", expand=True)
         ttk.Label(titles, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(titles, style="Sub.TLabel",
-                  text="Files each property's pages from the monthly AppFolio owner packet.").pack(anchor="w")
+                  text="Files each property's pages from the monthly AppFolio owner packet, and shows what changed since last month.").pack(anchor="w")
 
         # Update banner — stays hidden unless GitHub reports a newer release.
         self.banner = tk.Frame(outer, bg=BANNER_BG, padx=14, pady=8,
@@ -174,6 +177,14 @@ class App(tk.Tk):
         self.open_button = ttk.Button(row, text="Show the files in Finder", style="Action.TButton",
                                       command=self.open_destination, state="disabled")
         self.open_button.pack(side="right")
+        self.summary_button = ttk.Button(row, text="Open the summary workbook", style="Action.TButton",
+                                         command=self.open_summary, state="disabled")
+        self.summary_button.pack(side="right", padx=(0, 10))
+        self.summary_path: Path | None = None
+
+        # Footer goes in first, anchored to the bottom, so a small window can
+        # never push it out of view; the results box then takes what's left.
+        ttk.Label(outer, text=version_line(), style="Foot.TLabel").pack(side="bottom", anchor="w", pady=(10, 0))
 
         # Results
         box = tk.Frame(outer, bg=BORDER, padx=1, pady=1)
@@ -188,10 +199,20 @@ class App(tk.Tk):
         self.results.tag_configure("head", font=("Helvetica", 13, "bold"))
         self.results.tag_configure("warn", foreground="#9a3412")
         self._say("Choose the statement PDF to begin.\n\n"
-                  "Each property's pages will be saved as one file per month, "
-                  "inside a folder named for that property.")
+                  "Each property's pages will be saved as one file per month, inside a folder "
+                  "named for that property. The app also reads the figures off every page and "
+                  "keeps a Monthly Summary workbook up to date: what changed since last month, "
+                  "every property at a glance, month-by-month history, and a searchable ledger.")
 
-        ttk.Label(outer, text=version_line(), style="Foot.TLabel").pack(anchor="w", pady=(10, 0))
+        # Long file names / paths wrap to the width actually available.
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, event) -> None:
+        if event.widget is not self:
+            return
+        wrap = max(300, event.width - 300)
+        self.source_label.configure(wraplength=wrap)
+        self.dest_label.configure(wraplength=wrap)
 
     def _card(self, parent, title: str) -> ttk.Frame:
         wrap = tk.Frame(parent, bg=BORDER, padx=1, pady=1)
@@ -252,7 +273,13 @@ class App(tk.Tk):
             try:
                 plan = plan_split(src)
                 written = write_split(plan, dest)
-                outcome.put(("ok", plan, written))
+                summary = None
+                summary_error = None
+                try:
+                    summary = update_summary(dest, plan, PdfReader(str(src)))
+                except Exception:  # the split succeeded; say so, and show why the summary didn't
+                    summary_error = traceback.format_exc()
+                outcome.put(("ok", plan, written, summary, summary_error))
             except Exception as exc:  # show it, don't die silently
                 outcome.put(("error", exc, traceback.format_exc()))
 
@@ -266,11 +293,11 @@ class App(tk.Tk):
             self.after(100, lambda: self._poll(outcome))
             return
         if result[0] == "ok":
-            self._finish(result[1], result[2])
+            self._finish(result[1], result[2], result[3], result[4])
         else:
             self._fail(result[1], result[2])
 
-    def _finish(self, plan, written) -> None:
+    def _finish(self, plan, written, summary: "SummaryResult | None", summary_error: str | None) -> None:
         self._busy = False
         self.go_button.configure(state="normal", text="Split the statement")
         self.last_written_folder = self.destination
@@ -284,6 +311,32 @@ class App(tk.Tk):
                  (f"{plan.month_label} — {plan.total_pages} pages filed into {n_props} property "
                   f"folder{'s' if n_props != 1 else ''}", "head"),
                  (f" in {pretty_path(self.destination)}.\n\n", "")]
+
+        # --- What changed (the useful part) goes first.
+        if summary is not None:
+            self.summary_path = summary.workbook
+            self.summary_button.configure(state="normal")
+            if summary.compared_to:
+                lines.append((f"What changed — {summary.month_label} compared with {summary.compared_to}\n", "head"))
+                if not summary.changes:
+                    lines.append(("  Nothing stood out. Every figure matches last month.\n", ""))
+            else:
+                lines.append((f"What stands out in {summary.month_label}\n", "head"))
+                lines.append(("  This is the first month on record, so there is no earlier month to compare "
+                              "against yet. Run last month's statement through the app and the comparison "
+                              "fills in. The checks below don't need a prior month.\n", ""))
+            for c in summary.attention:
+                lines.append((f"  ▲ {c.property}: {c.detail}\n", "warn"))
+            for c in summary.notes:
+                lines.append((f"  • {c.property}: {c.detail}\n", ""))
+            lines.append((f"\nThe full picture is in the Monthly Summary workbook ({summary.months_on_record} "
+                          f"month{'s' if summary.months_on_record != 1 else ''} on record): what changed, every "
+                          "property at a glance, month-by-month history, and a searchable ledger.\n\n", ""))
+        elif summary_error:
+            lines.append(("The pages were filed, but the summary workbook could not be updated.\n", "head"))
+            lines.append((summary_error.strip().splitlines()[-1] + "\n\n", "warn"))
+
+        lines.append(("Filed\n", "head"))
         for w in written:
             s = w.section
             pages = f"{s.page_count} page{'s' if s.page_count != 1 else ''}"
@@ -308,6 +361,10 @@ class App(tk.Tk):
                           "and the PDF you were trying to split.\n\n", ""),
                          (detail, "")])
         messagebox.showerror(APP_NAME, f"The statement could not be split.\n\n{exc}")
+
+    def open_summary(self) -> None:
+        if self.summary_path and self.summary_path.is_file():
+            subprocess.Popen(["open", str(self.summary_path)])
 
     def open_destination(self) -> None:
         folder = self.last_written_folder or self.destination

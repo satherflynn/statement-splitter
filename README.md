@@ -15,8 +15,25 @@ Property Statements/
   …
 ```
 
-Open a property's folder and every month is side by side, so comparing this
-month to last is one click instead of scrolling through 70 pages twice.
+Open a property's folder and every month is side by side.
+
+It also does the comparing for you. The app reads the figures off every page
+and keeps **Property Statements/Monthly Summary/Monthly Summary.xlsx** up to
+date, with four sheets:
+
+- **What changed** — this month against the previous month on record, one
+  line per thing worth a look: tenant or rent changed, rent not received,
+  tenant past due, management fee out of line with the other properties,
+  charges that appeared / disappeared / changed amount, reversal entries
+  that don't net to zero, negative cash balance, property missing or new.
+- **This month** — every property on one row: rent roll, rent received,
+  income, fees, expenses, owner payment, net income, cash, bills due, past due.
+- **History** — property × month grids for the figures worth trending.
+- **Ledger** — every transaction from every month, filterable.
+
+The same "what changed" list is shown in the app window right after the
+split. Run earlier months in any order and the history fills in; each month
+is stored as a small JSON file under `Monthly Summary/data/`.
 
 ## Using it
 
@@ -29,6 +46,16 @@ sees them in the Files app). Change the destination under step 2 in the app;
 it's remembered.
 
 Re-running on the same statement simply replaces that month's files.
+
+## How the reading works
+
+`ledger.py` reads each page by the *positions* of its words rather than the
+flattened text: AppFolio prints every report in fixed columns, and a long
+payee or description wraps onto the line just above or below the dated line.
+Every fragment is attached to the nearest dated row and re-joined per column.
+Each property's ledger is checked to the cent (beginning cash + income −
+expense = ending cash) — validated on a real 16-property packet.
+`summary.py` turns that into the checks and the workbook.
 
 ## How it decides where a page belongs
 
@@ -62,6 +89,8 @@ when it opens and shows a Download button if a newer version exists.
 source venv/bin/activate
 python splitter.py packet.pdf                # dry run: shows the plan only
 python splitter.py packet.pdf ~/out          # …and writes the files
+python make_sample_packet.py samples/        # two fictional months with planted differences
+python test_splitter.py                      # regression test: split + comparison on the samples
 python make_icon.py                          # redraw appicon.icns / .png
 rm -rf build "dist/Statement Splitter.app" && python setup.py py2app --no-strip
 ./build_dmg.sh                               # dist/Statement-Splitter-<version>.dmg + Install Guide
