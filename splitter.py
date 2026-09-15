@@ -91,6 +91,7 @@ class SplitPlan:
     total_pages: int
     sections: list[Section] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    month_guessed: bool = False   # True when no period was printed and we used today's month
 
 
 @dataclass
@@ -226,6 +227,7 @@ def plan_split(source: Path) -> SplitPlan:
     if not plan.month:
         plan.month = datetime.now().strftime("%Y-%m")
         plan.month_label = datetime.now().strftime("%B %Y")
+        plan.month_guessed = True
         plan.warnings.append(
             "No statement period was found in the file, so the files are named "
             f"for the current month ({plan.month_label}). Check that this is right."

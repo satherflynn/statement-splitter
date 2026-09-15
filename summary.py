@@ -58,11 +58,13 @@ class Change:
 @dataclass
 class SummaryResult:
     workbook: Path
-    month: str
+    month: str                   # the month the comparison is FOR (the latest on record)
     month_label: str
     compared_to: str | None      # label of the prior month used, or None
     changes: list[Change] = field(default_factory=list)
     months_on_record: int = 0
+    ran_month_label: str = ""    # the month that was just processed
+    ran_is_latest: bool = True   # False when an earlier month was run to fill in history
 
     @property
     def attention(self) -> list[Change]:
@@ -138,10 +140,21 @@ def figures(p: dict) -> dict:
     reversals = [l for l in led if "revers" in typ(l)]
     rev_net = round(sum((l.get("income") or 0) - (l.get("expense") or 0) for l in reversals), 2)
     units = p.get("units") or []
-    u = units[0] if units else {}
-    sched = None
-    if u.get("rent") is not None or u.get("recurring") is not None:
-        sched = round((u.get("rent") or 0) + (u.get("recurring") or 0), 2)
+    # A property with several units (a duplex) has one rent-roll row per unit:
+    # add the money up, list every tenant, and call it "Current" only if all are.
+    tenants = [u.get("tenant") for u in units if u.get("tenant")]
+    statuses = [u.get("status") for u in units if u.get("status")]
+    money_rows = [u for u in units if u.get("rent") is not None or u.get("recurring") is not None]
+    sched = round(sum((u.get("rent") or 0) + (u.get("recurring") or 0) for u in money_rows), 2) if money_rows else None
+    past_rows = [u.get("past_due") for u in units if u.get("past_due") is not None]
+    u = {
+        "tenant": ", ".join(tenants),
+        "status": ("Current" if all(s.lower() == "current" for s in statuses) else
+                   ", ".join(sorted(set(s for s in statuses if s.lower() != "current")))) if statuses else "",
+        "rent": round(sum(u.get("rent") or 0 for u in money_rows), 2) if money_rows else None,
+        "recurring": round(sum(u.get("recurring") or 0 for u in money_rows), 2) if money_rows else None,
+        "past_due": round(sum(past_rows), 2) if past_rows else None,
+    }
     # The manager's fee is a percentage of the *scheduled* rent (rent roll), whether or
     # not the tenant paid it all; fall back to rent received when there's no rent roll.
     fee_base = sched if sched else rent_received
@@ -443,21 +456,36 @@ def build_workbook(destination: Path, months: dict[str, dict], cur_month: str,
 
 # ------------------------------------------------------------------ entry point
 
+class NotSummarised(Exception):
+    """Raised when a file shouldn't go into the history (with a plain-English reason)."""
+
+
 def update_summary(destination: Path, plan, reader) -> SummaryResult:
-    """Read this month's figures, store them, rebuild the workbook, report changes."""
+    """Read this month's figures, store them, rebuild the workbook, report changes.
+
+    The comparison shown is always for the LATEST month on record against the
+    month before it — so running earlier months to fill in history never hides
+    the current month's findings.
+    """
     destination = Path(destination)
+    if getattr(plan, "month_guessed", False):
+        raise NotSummarised("The statement period couldn't be read from this file, so its figures "
+                            "were not added to the Monthly Summary (they'd be filed under the wrong month).")
+    if not any(s.code for s in plan.sections):
+        raise NotSummarised("No property sections were recognised, so nothing was added to the Monthly Summary.")
     month_data = collect_month(plan, reader)
     save_month(destination, month_data)
     months = load_months(destination)
     months[month_data["month"]] = month_data
-    earlier = [m for m in sorted(months) if m < month_data["month"]]
+    latest = max(months)
+    earlier = [m for m in sorted(months) if m < latest]
     prev = months[earlier[-1]] if earlier else None
-    changes = compare(month_data, prev)
-    wb = build_workbook(destination, months, month_data["month"], changes,
-                        prev["month_label"] if prev else None)
-    return SummaryResult(workbook=wb, month=month_data["month"], month_label=month_data["month_label"],
+    changes = compare(months[latest], prev)
+    wb = build_workbook(destination, months, latest, changes, prev["month_label"] if prev else None)
+    return SummaryResult(workbook=wb, month=latest, month_label=months[latest]["month_label"],
                          compared_to=prev["month_label"] if prev else None, changes=changes,
-                         months_on_record=len(months))
+                         months_on_record=len(months), ran_month_label=month_data["month_label"],
+                         ran_is_latest=(latest == month_data["month"]))
 
 
 def describe(result: SummaryResult) -> str:

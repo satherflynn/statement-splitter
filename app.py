@@ -13,7 +13,6 @@ window and remembers the destination folder between runs.
 from __future__ import annotations
 
 import json
-import os
 import queue
 import subprocess
 import sys
@@ -26,8 +25,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from pypdf import PdfReader
 
-from splitter import plan_split, write_split, describe_plan
-from summary import update_summary, SummaryResult
+from splitter import plan_split, write_split
+from summary import update_summary, SummaryResult, NotSummarised
 from update_check import newer_release
 from version import APP_NAME, APP_VERSION, resource_base, version_line
 
@@ -111,10 +110,10 @@ class App(tk.Tk):
         style.configure("Card.TFrame", background=CARD)
         style.configure("Bg.TFrame", background=BG)
         style.configure("Title.TLabel", background=BG, foreground=INK, font=("Helvetica", 22, "bold"))
-        style.configure("Sub.TLabel", background=BG, foreground=MUTED, font=("Helvetica", 12))
+        style.configure("Sub.TLabel", background=BG, foreground=MUTED, font=("Helvetica", 13))
         style.configure("Step.TLabel", background=CARD, foreground=INK, font=("Helvetica", 14, "bold"))
-        style.configure("Value.TLabel", background=CARD, foreground=MUTED, font=("Helvetica", 12))
-        style.configure("Foot.TLabel", background=BG, foreground=MUTED, font=("Helvetica", 10))
+        style.configure("Value.TLabel", background=CARD, foreground=MUTED, font=("Helvetica", 13))
+        style.configure("Foot.TLabel", background=BG, foreground=MUTED, font=("Helvetica", 11))
         style.configure("Action.TButton", font=("Helvetica", 13), padding=(14, 6))
         style.configure("Go.TButton", font=("Helvetica", 15, "bold"), padding=(18, 10),
                         foreground="white", background=ACCENT, borderwidth=0)
@@ -138,8 +137,10 @@ class App(tk.Tk):
         titles = ttk.Frame(head, style="Bg.TFrame")
         titles.pack(side="left", fill="x", expand=True)
         ttk.Label(titles, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
-        ttk.Label(titles, style="Sub.TLabel",
-                  text="Files each property's pages from the monthly AppFolio owner packet, and shows what changed since last month.").pack(anchor="w")
+        self.subtitle = ttk.Label(titles, style="Sub.TLabel", wraplength=560,
+                                  text="Files each property's pages from the monthly AppFolio owner packet, "
+                                       "and shows what changed since last month.")
+        self.subtitle.pack(anchor="w")
 
         # Update banner — stays hidden unless GitHub reports a newer release.
         self.banner = tk.Frame(outer, bg=BANNER_BG, padx=14, pady=8,
@@ -189,15 +190,23 @@ class App(tk.Tk):
         # Results
         box = tk.Frame(outer, bg=BORDER, padx=1, pady=1)
         box.pack(fill="both", expand=True)
-        self.results = tk.Text(box, wrap="word", font=("Menlo", 12), bg=CARD, fg=INK,
-                               relief="flat", padx=12, pady=10, state="disabled",
-                               highlightthickness=0)
+        self.results = tk.Text(box, wrap="word", font=("Helvetica", 13), bg=CARD, fg=INK,
+                               relief="flat", padx=14, pady=12, highlightthickness=0,
+                               spacing1=2, spacing3=2, cursor="arrow")
+        # Readable (selectable, copyable) but not editable: swallow typing.
+        self.results.bind("<Key>", lambda e: "break" if not (e.state & 0x8 and e.keysym.lower() == "c") else None)
         scroll = ttk.Scrollbar(box, command=self.results.yview)
         self.results.configure(yscrollcommand=scroll.set)
         self.results.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        self.results.tag_configure("head", font=("Helvetica", 13, "bold"))
+        self.results.tag_configure("title", font=("Helvetica", 15, "bold"), spacing3=6)
+        self.results.tag_configure("head", font=("Helvetica", 13, "bold"), spacing1=10, spacing3=4)
+        self.results.tag_configure("prop", font=("Helvetica", 13, "bold"), lmargin1=14, lmargin2=14, spacing1=6)
+        self.results.tag_configure("item", lmargin1=30, lmargin2=44)
         self.results.tag_configure("warn", foreground="#9a3412")
+        self.results.tag_configure("warnitem", foreground="#9a3412", lmargin1=30, lmargin2=44)
+        self.results.tag_configure("muted", foreground=MUTED)
+        self.results.tag_configure("mono", font=("Menlo", 12), lmargin1=14, lmargin2=14)
         self._say("Choose the statement PDF to begin.\n\n"
                   "Each property's pages will be saved as one file per month, inside a folder "
                   "named for that property. The app also reads the figures off every page and "
@@ -213,6 +222,7 @@ class App(tk.Tk):
         wrap = max(300, event.width - 300)
         self.source_label.configure(wraplength=wrap)
         self.dest_label.configure(wraplength=wrap)
+        self.subtitle.configure(wraplength=max(300, event.width - 160))
 
     def _card(self, parent, title: str) -> ttk.Frame:
         wrap = tk.Frame(parent, bg=BORDER, padx=1, pady=1)
@@ -241,7 +251,8 @@ class App(tk.Tk):
         self.go_button.configure(state="normal")
         self.settings["last_source_dir"] = str(path.parent)
         save_settings(self.settings)
-        self._say(f"Ready to split “{path.name}”.\n\nClick “Split the statement”.")
+        self._say_parts([(f"Ready to split “{path.name}”.\n", "title"),
+                         ("Click “Split the statement”.\n", "item")])
 
     def choose_destination(self) -> None:
         start = self.destination if self.destination.is_dir() else self.destination.parent
@@ -261,7 +272,7 @@ class App(tk.Tk):
             return
         self._busy = True
         self.go_button.configure(state="disabled", text="Splitting…")
-        self._say("Reading the statement…")
+        self._say_parts([("Reading the statement…\n", "title")])
         src, dest = self.source, self.destination
 
         # The work runs on a helper thread so the window stays responsive;
@@ -277,8 +288,10 @@ class App(tk.Tk):
                 summary_error = None
                 try:
                     summary = update_summary(dest, plan, PdfReader(str(src)))
+                except NotSummarised as why:   # deliberate skip, with a plain reason
+                    summary_error = str(why)
                 except Exception:  # the split succeeded; say so, and show why the summary didn't
-                    summary_error = traceback.format_exc()
+                    summary_error = traceback.format_exc().strip().splitlines()[-1]
                 outcome.put(("ok", plan, written, summary, summary_error))
             except Exception as exc:  # show it, don't die silently
                 outcome.put(("error", exc, traceback.format_exc()))
@@ -307,59 +320,75 @@ class App(tk.Tk):
 
         n_props = sum(1 for w in written if w.section.code)
         n_replaced = sum(1 for w in written if w.replaced)
-        lines = [("Done.  ", "head"),
-                 (f"{plan.month_label} — {plan.total_pages} pages filed into {n_props} property "
-                  f"folder{'s' if n_props != 1 else ''}", "head"),
-                 (f" in {pretty_path(self.destination)}.\n\n", "")]
+        lines = [(f"{plan.month_label} is filed.\n", "title"),
+                 (f"{plan.total_pages} pages went into {n_props} property folder{'s' if n_props != 1 else ''} "
+                  f"in {pretty_path(self.destination)}.\n", "muted")]
 
         # --- What changed (the useful part) goes first.
         if summary is not None:
             self.summary_path = summary.workbook
             self.summary_button.configure(state="normal")
+            if not summary.ran_is_latest:
+                lines.append((f"You ran {summary.ran_month_label}, which is earlier than the latest month on record, "
+                              f"so it has been added to the history. The comparison below is for "
+                              f"{summary.month_label}, the latest month.\n", "muted"))
             if summary.compared_to:
                 lines.append((f"What changed — {summary.month_label} compared with {summary.compared_to}\n", "head"))
                 if not summary.changes:
-                    lines.append(("  Nothing stood out. Every figure matches last month.\n", ""))
+                    lines.append(("Nothing stood out. Every figure matches last month.\n", "item"))
             else:
                 lines.append((f"What stands out in {summary.month_label}\n", "head"))
-                lines.append(("  This is the first month on record, so there is no earlier month to compare "
-                              "against yet. Run last month's statement through the app and the comparison "
-                              "fills in. The checks below don't need a prior month.\n", ""))
-            for c in summary.attention:
-                lines.append((f"  ▲ {c.property}: {c.detail}\n", "warn"))
-            for c in summary.notes:
-                lines.append((f"  • {c.property}: {c.detail}\n", ""))
-            lines.append((f"\nThe full picture is in the Monthly Summary workbook ({summary.months_on_record} "
+                lines.append(("This is the first month on record, so there is nothing to compare against yet. "
+                              "Run last month's statement and the comparison fills in. "
+                              "The checks below don't need a prior month.\n", "item"))
+            if summary.attention:
+                lines.append((f"Needs a look ({len(summary.attention)})\n", "warn"))
+                lines.extend(self._grouped(summary.attention, "warnitem"))
+            if summary.notes:
+                lines.append((f"Smaller differences ({len(summary.notes)})\n", "head"))
+                lines.extend(self._grouped(summary.notes, "item"))
+            lines.append((f"The full picture is in the Monthly Summary workbook ({summary.months_on_record} "
                           f"month{'s' if summary.months_on_record != 1 else ''} on record): what changed, every "
-                          "property at a glance, month-by-month history, and a searchable ledger.\n\n", ""))
+                          "property at a glance, month-by-month history, and a searchable ledger.\n", "muted"))
         elif summary_error:
-            lines.append(("The pages were filed, but the summary workbook could not be updated.\n", "head"))
-            lines.append((summary_error.strip().splitlines()[-1] + "\n\n", "warn"))
+            lines.append(("The pages were filed, but the Monthly Summary was not updated.\n", "head"))
+            lines.append((summary_error + "\n", "warnitem"))
 
         lines.append(("Filed\n", "head"))
         for w in written:
             s = w.section
             pages = f"{s.page_count} page{'s' if s.page_count != 1 else ''}"
-            tag = "" if s.code else "warn"
             note = "   (replaced last copy)" if w.replaced else ""
-            lines.append((f"  {s.folder_name}  ›  {w.path.name}   {pages}{note}\n", tag))
+            lines.append((f"{s.folder_name}  ›  {w.path.name}   {pages}{note}\n", "mono" if s.code else "warnitem"))
         if n_replaced:
-            lines.append((f"\n{n_replaced} file{'s' if n_replaced != 1 else ''} for this month "
-                          "already existed and were replaced with this copy.\n", ""))
+            lines.append((f"{n_replaced} file{'s' if n_replaced != 1 else ''} for this month "
+                          "already existed and were replaced with this copy.\n", "muted"))
         if plan.warnings:
-            lines.append(("\nPlease note:\n", "head"))
+            lines.append(("Please note\n", "head"))
             for wmsg in plan.warnings:
-                lines.append((f"  • {wmsg}\n", "warn"))
+                lines.append((f"{wmsg}\n", "warnitem"))
         self._say_parts(lines)
+
+    @staticmethod
+    def _grouped(changes, item_tag: str) -> list[tuple[str, str]]:
+        """Property name once, then its items indented beneath it."""
+        out: list[tuple[str, str]] = []
+        current = None
+        for c in changes:
+            if c.property != current:
+                current = c.property
+                out.append((f"{c.property}\n", "prop"))
+            out.append((f"• {c.detail}\n", item_tag))
+        return out
 
     def _fail(self, exc: Exception, detail: str) -> None:
         self._busy = False
         self.go_button.configure(state="normal", text="Split the statement")
-        self._say_parts([("Something went wrong.\n\n", "head"),
-                         (f"{exc}\n\n", "warn"),
-                         ("If this keeps happening, send Sather this window's text "
-                          "and the PDF you were trying to split.\n\n", ""),
-                         (detail, "")])
+        self._say_parts([("Something went wrong.\n", "title"),
+                         (f"{exc}\n", "warnitem"),
+                         ("If this keeps happening, select the text in this box, copy it, "
+                          "and send it to Sather along with the PDF you were trying to split.\n", "item"),
+                         (detail, "mono")])
         messagebox.showerror(APP_NAME, f"The statement could not be split.\n\n{exc}")
 
     def open_summary(self) -> None:
@@ -391,7 +420,7 @@ class App(tk.Tk):
             return
         self._banner_shown = True
         self.banner_label.configure(
-            text=f"Version {version} is available. You have {APP_VERSION.split()[0]}.")
+            text=f"Version {version} is available. You have {APP_VERSION}.")
         self.banner_button.configure(command=lambda: webbrowser.open(page_url))
         # Slot the banner just above the first card.
         self.banner.pack(fill="x", pady=(14, 0), before=self._first_card_wrap)
@@ -401,14 +430,13 @@ class App(tk.Tk):
         self._say_parts([(text, "")])
 
     def _say_parts(self, parts) -> None:
-        self.results.configure(state="normal")
         self.results.delete("1.0", "end")
         for text, tag in parts:
             if tag:
                 self.results.insert("end", text, tag)
             else:
                 self.results.insert("end", text)
-        self.results.configure(state="disabled")
+        self.results.see("1.0")
 
 
 def main() -> None:

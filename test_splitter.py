@@ -26,7 +26,6 @@ EXPECTED_ATTENTION = {
     ("004-02 125 Main Street", "Rent roll changed"),
     ("004-02 125 Main Street", "Tenant changed"),
     ("004-03 127 Main Street", "Management fee out of line"),
-    ("004-05 4410 Meadow Lane", None),                       # placeholder, see notes below
     ("004-06 4412 - 4412 Meadow Lane", "Tenant past due"),
     ("004-06 4412 - 4412 Meadow Lane", "Rent received changed"),
     ("004-07 9 Very Long Address Name Court", "Negative cash balance"),
@@ -69,7 +68,7 @@ def main():
 
         attn = {(c.property, c.what) for c in r_aug.attention}
         notes = {(c.property, c.what) for c in r_aug.notes}
-        missing = {e for e in EXPECTED_ATTENTION if e[1] and e not in attn}
+        missing = {e for e in EXPECTED_ATTENTION if e not in attn}
         assert not missing, f"attention items not raised: {missing}\nraised: {sorted(attn)}"
         missing_notes = {e for e in EXPECTED_NOTES if e not in notes}
         assert not missing_notes, f"notes not raised: {missing_notes}\nraised: {sorted(notes)}"
@@ -79,6 +78,15 @@ def main():
         # A recurring charge with the same amount both months must not read as new/missing.
         noise = [c for c in r_aug.notes if "Waste Management" in c.detail]
         assert not noise, [c.detail for c in noise]
+
+        # --- out of order: August first, then July — the comparison must still be August vs July
+        dest2 = tmp / "out2"
+        r1 = update_summary(dest2, plan_split(aug), PdfReader(str(aug)))
+        assert r1.compared_to is None and r1.ran_is_latest
+        r2 = update_summary(dest2, plan_split(jul), PdfReader(str(jul)))
+        assert r2.ran_month_label == "July 2026" and not r2.ran_is_latest
+        assert r2.month_label == "August 2026" and r2.compared_to == "July 2026", (r2.month_label, r2.compared_to)
+        assert {(c.property, c.what) for c in r2.attention} >= EXPECTED_ATTENTION
 
         # --- ledger reconciles for every property in August
         from ledger import read_property_month
