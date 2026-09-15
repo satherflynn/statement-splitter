@@ -19,7 +19,7 @@ DATA_FILES = [(".", ["appicon_128.png", "CHANGELOG.md"])]
 OPTIONS = {
     "argv_emulation": False,
     "iconfile": "appicon.icns",
-    "packages": ["pypdf"],
+    "packages": ["pypdf", "certifi"],
     "includes": ["tkinter"],
     "plist": {
         "CFBundleName": APP_NAME,

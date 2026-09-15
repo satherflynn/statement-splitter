@@ -64,7 +64,7 @@ python splitter.py packet.pdf                # dry run: shows the plan only
 python splitter.py packet.pdf ~/out          # …and writes the files
 python make_icon.py                          # redraw appicon.icns / .png
 rm -rf build "dist/Statement Splitter.app" && python setup.py py2app --no-strip
-./build_dmg.sh                               # dist/Statement Splitter.dmg + Install Guide
+./build_dmg.sh                               # dist/Statement-Splitter-<version>.dmg + Install Guide
 ./sign_and_notarize.sh                       # Developer ID signing + Apple notarization (see CLAUDE.md)
 ```
 

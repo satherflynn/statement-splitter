@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 import urllib.request
 
 from version import APP_VERSION
@@ -18,6 +19,17 @@ REPO = "satherflynn/statement-splitter"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{REPO}/releases/latest"
 TIMEOUT_SECONDS = 4
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """python.org / py2app Pythons ship without root certificates, so a plain
+    HTTPS call fails with CERTIFICATE_VERIFY_FAILED. certifi carries the
+    standard bundle; fall back to the system default if it's missing."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 def _as_tuple(version: str) -> tuple[int, ...]:
@@ -33,7 +45,7 @@ def newer_release() -> tuple[str, str] | None:
             headers={"Accept": "application/vnd.github+json",
                      "User-Agent": f"StatementSplitter/{APP_VERSION}"},
         )
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS, context=_ssl_context()) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         tag = str(data.get("tag_name") or "")
         page = str(data.get("html_url") or RELEASES_URL)

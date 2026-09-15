@@ -21,7 +21,8 @@ PROFILE="statement-splitter-notary"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 APP="dist/${APP_NAME}.app"
-DMG="dist/${APP_NAME}.dmg"
+VERSION="$(./venv/bin/python -c "from version import APP_VERSION; print(APP_VERSION)")"
+DMG="dist/Statement-Splitter-${VERSION}.dmg"
 ENT="entitlements.plist"
 
 [ -d "$APP" ] || { echo "ERROR: $APP not found — build it first (python setup.py py2app --no-strip)"; exit 1; }
@@ -51,7 +52,6 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 echo "App signature verified."
 
 # --- 2. DMG
-rm -f "$DMG"
 GUIDE_FLAGS=--notarized ./build_dmg.sh
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 

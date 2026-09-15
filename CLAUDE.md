@@ -44,7 +44,7 @@ run commands directly.
    Developer ID Application certificate (Team MW9D3L254H), builds the DMG
    (install guide in `--notarized` form), signs it, submits to Apple's notary
    service (keychain profile `statement-splitter-notary`), staples the ticket.
-4. `gh release create v<version> "dist/Statement Splitter.dmg" --title "Statement Splitter <version>" --notes "<what changed>"`
+4. `gh release create v<version> dist/Statement-Splitter-<version>.dmg --title "Statement Splitter <version>" --notes "<what changed>"`
    The permanent link <https://github.com/satherflynn/statement-splitter/releases/latest>
    then serves the new DMG and the in-app update check picks it up.
 

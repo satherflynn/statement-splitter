@@ -7,7 +7,8 @@
 # --notarized (sign_and_notarize.sh does) to drop that section.
 #
 # Usage:  ./build_dmg.sh        (builds the .app first if it's missing)
-# Output: dist/Statement Splitter.dmg
+# Output: dist/Statement-Splitter-<version>.dmg  (no spaces: GitHub would
+#         otherwise rename the download to "Statement.Splitter.dmg")
 set -euo pipefail
 APP_NAME="Statement Splitter"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +16,8 @@ cd "$HERE"
 PY="./venv/bin/python"
 
 APP="dist/${APP_NAME}.app"
-DMG="dist/${APP_NAME}.dmg"
+VERSION="$("$PY" -c "from version import APP_VERSION; print(APP_VERSION)")"
+DMG="dist/Statement-Splitter-${VERSION}.dmg"
 GUIDE="Install Guide (Mac).pdf"
 
 if [ ! -d "$APP" ]; then
@@ -34,6 +36,6 @@ cp "$GUIDE" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 find "$STAGE" -name ".DS_Store" -delete 2>/dev/null || true
 
-rm -f "$DMG"
+rm -f dist/*.dmg
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
 echo "Done  →  $DMG  ($(du -h "$DMG" | cut -f1 | tr -d ' '))"
