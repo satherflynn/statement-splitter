@@ -25,7 +25,7 @@ doc = SimpleDocTemplate(out, pagesize=LETTER, leftMargin=inch, rightMargin=inch,
                         topMargin=0.9 * inch, bottomMargin=0.9 * inch,
                         title=f"{APP_NAME} — Install Guide", author="Sather Flynn")
 story = [
-    Image("appicon_128.png", width=0.8 * inch, height=0.8 * inch, hAlign="LEFT"),
+    Image("appicon.png", width=0.8 * inch, height=0.8 * inch, hAlign="LEFT"),
     Spacer(1, 6),
     Paragraph(f"{APP_NAME} — Install Guide (Mac)", H1),
     Paragraph(f"Version {APP_VERSION}. Takes about two minutes, once.", P),

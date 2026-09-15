@@ -302,7 +302,7 @@ def compare(cur: dict, prev: dict | None) -> list[Change]:
 
 # ------------------------------------------------------------------ the workbook
 
-HEAD_FILL = PatternFill("solid", fgColor="0F766E")
+HEAD_FILL = PatternFill("solid", fgColor="1E3A5F")
 HEAD_FONT = Font(bold=True, color="FFFFFF")
 ATTN_FILL = PatternFill("solid", fgColor="FDE2E1")
 NOTE_FILL = PatternFill("solid", fgColor="FFF4D6")

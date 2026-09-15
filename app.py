@@ -40,8 +40,9 @@ BG = "#f4f6f8"
 CARD = "#ffffff"
 INK = "#1d2733"
 MUTED = "#5f6b78"
-ACCENT = "#0f766e"       # teal
-ACCENT_DARK = "#0b5c56"
+ACCENT = "#1e3a5f"       # navy
+ACCENT_DARK = "#152a45"
+ACCENT_EDGE = "#10213a"
 BORDER = "#d9dee4"
 BANNER_BG = "#fff7e6"
 BANNER_INK = "#7c4a03"
@@ -127,13 +128,9 @@ class App(tk.Tk):
         # Header with the app icon, if we have it.
         head = ttk.Frame(outer, style="Bg.TFrame")
         head.pack(fill="x")
-        icon_png = resource_base() / "appicon_128.png"
-        if icon_png.is_file():
-            try:
-                self._icon_img = tk.PhotoImage(file=str(icon_png)).subsample(2, 2)
-                tk.Label(head, image=self._icon_img, bg=BG).pack(side="left", padx=(0, 14))
-            except tk.TclError:
-                pass
+        # Drawn, not a bitmap: Tk paints canvas shapes at full Retina
+        # resolution, whereas a small PNG comes out soft on a HiDPI screen.
+        self._draw_logo(head, 60).pack(side="left", padx=(0, 14))
         titles = ttk.Frame(head, style="Bg.TFrame")
         titles.pack(side="left", fill="x", expand=True)
         ttk.Label(titles, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
@@ -215,6 +212,43 @@ class App(tk.Tk):
 
         # Long file names / paths wrap to the width actually available.
         self.bind("<Configure>", self._on_resize)
+
+    @staticmethod
+    def _draw_logo(parent, size: int) -> tk.Canvas:
+        """The app icon as vector shapes: navy rounded square, three fanned pages."""
+        import math
+        c = tk.Canvas(parent, width=size, height=size, bg=BG, highlightthickness=0, bd=0)
+        s = size
+        r = s * 0.22
+        # Rounded square (four arcs + two rectangles) with a slightly darker edge.
+        def rounded(x0, y0, x1, y1, rad, fill):
+            c.create_arc(x0, y0, x0 + 2 * rad, y0 + 2 * rad, start=90, extent=90, fill=fill, outline=fill)
+            c.create_arc(x1 - 2 * rad, y0, x1, y0 + 2 * rad, start=0, extent=90, fill=fill, outline=fill)
+            c.create_arc(x0, y1 - 2 * rad, x0 + 2 * rad, y1, start=180, extent=90, fill=fill, outline=fill)
+            c.create_arc(x1 - 2 * rad, y1 - 2 * rad, x1, y1, start=270, extent=90, fill=fill, outline=fill)
+            c.create_rectangle(x0 + rad, y0, x1 - rad, y1, fill=fill, outline=fill)
+            c.create_rectangle(x0, y0 + rad, x1, y1 - rad, fill=fill, outline=fill)
+        rounded(1, 1, s - 1, s - 1, r, ACCENT_EDGE)
+        rounded(2, 2, s - 2, s - 2, r - 1, ACCENT)
+
+        def page(cx, cy, w, h, deg, lines=True):
+            a = math.radians(deg)
+            cos, sin = math.cos(a), math.sin(a)
+            def pt(x, y):
+                return (cx + x * cos - y * sin, cy + x * sin + y * cos)
+            corners = [pt(-w / 2, -h / 2), pt(w / 2, -h / 2), pt(w / 2, h / 2), pt(-w / 2, h / 2)]
+            c.create_polygon(*[v for p in corners for v in p], fill="#ffffff", outline="#d7dde6", width=1)
+            if lines:
+                for i in range(4):
+                    y = -h / 2 + h * (0.28 + 0.16 * i)
+                    x1 = -w / 2 + w * 0.18
+                    x2 = w / 2 - w * (0.18 if i % 3 != 2 else 0.42)
+                    c.create_line(*pt(x1, y), *pt(x2, y), fill="#b0becf", width=max(1, s / 40), capstyle="round")
+        w, h = s * 0.36, s * 0.46
+        page(s * 0.46, s * 0.58, w, h, -14, lines=False)
+        page(s * 0.55, s * 0.55, w, h, -4, lines=False)
+        page(s * 0.64, s * 0.53, w, h, 7, lines=True)
+        return c
 
     def _on_resize(self, event) -> None:
         if event.widget is not self:

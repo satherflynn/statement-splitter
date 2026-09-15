@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Statement Splitter app icon.
 
-A teal rounded square with a stack of white pages fanning out to the right —
+A navy rounded square with a stack of white pages fanning out to the right —
 one packet becoming several files. Writes appicon.png (1024 preview),
 appicon_128.png (shown inside the window) and appicon.icns (the Mac app icon)
 via Apple's `iconutil`.
@@ -14,10 +14,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 S = 1024
-TEAL = (15, 118, 110)
-TEAL_DK = (9, 78, 73)
+TEAL = (30, 58, 95)      # navy (name kept for the gradient code below)
+TEAL_DK = (16, 33, 58)
 PAPER = (255, 255, 255)
-LINE = (170, 200, 196)
+LINE = (176, 190, 210)
 SHADOW = (0, 0, 0, 70)
 
 
