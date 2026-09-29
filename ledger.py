@@ -285,7 +285,11 @@ def parse_rent_roll(pages) -> dict:
 # ---------------------------------------------------------------- one property-month
 
 def page_kind(page) -> str:
-    text = page.extract_text() or ""
+    return kind_from_text(page.extract_text() or "")
+
+
+def kind_from_text(text: str) -> str:
+    """"owner" | "income" | "rentroll" | "other" for one page's text."""
     lines = [l.strip() for l in text.splitlines()]
     if "Owner Statement" in lines:
         return "owner"

@@ -12,8 +12,13 @@ from every month on record. The workbook has four sheets:
                  this month against the previous month on record, plus a
                  few checks that don't need a prior month (negative cash,
                  tenant past due, vacancy, reversal entries that don't net
-                 to zero, a management fee out of line with the others)
-  This month     one row per property with the key figures
+                 to zero, a management fee out of line with the others).
+                 Bills are compared with the LAST TIME THAT BILL WAS PAID,
+                 not with last month, because garbage and property tax are
+                 paid quarterly — comparing those month to month buried the
+                 useful lines under "new charge / not seen" noise.
+  This month     every property, in two stacked tables (income & expenses,
+                 then payment & balances) so it fits a screen or a tablet
   History        property × month grids for the figures worth trending
   Ledger         every transaction, every month, filterable
 
@@ -123,6 +128,7 @@ def _norm(text: str) -> str:
     numbers, month names) so the same recurring charge gets the same key."""
     t = (text or "").lower()
     t = re.sub(r"\d[\d/,.\-]*", " ", t)
+    t = t.replace("-", " ")      # "aug-oct-jan" -> three month words, all dropped
     t = " ".join(w for w in t.split() if w not in MONTH_WORDS)
     return re.sub(r"\s+", " ", t).strip(" -")
 
@@ -184,8 +190,27 @@ def figures(p: dict) -> dict:
     }
 
 
+# An account / parcel number: 5+ digits, possibly hyphenated ("6-18078-65003",
+# "040160-000", "50606103"). Dates contain "/" and are never matched.
+ACCOUNT_RE = re.compile(r"(?<![\d/])(\d[\d-]{3,}\d)(?![\d/])")
+
+
+def bill_key(line: dict) -> str:
+    """Identity of a bill, stable from one payment to the next.
+
+    Payee plus the account or parcel number when the description carries one
+    (so two tax parcels on one property stay separate), else payee plus the
+    description with dates and month names removed."""
+    payee = _norm(line.get("payee", ""))
+    desc = line.get("description") or ""
+    for m in ACCOUNT_RE.finditer(desc):
+        if sum(ch.isdigit() for ch in m.group(1)) >= 5:
+            return f"{payee} | #{m.group(1)}"
+    return f"{payee} | {_norm(desc)}"
+
+
 def expense_keys(p: dict) -> dict[str, dict]:
-    """Recurring-style expense lines keyed by normalised payee+description."""
+    """Bill-type expense lines for one property-month, keyed by bill_key()."""
     out: dict[str, dict] = {}
     for l in p.get("ledger") or []:
         if not l.get("expense"):
@@ -193,7 +218,7 @@ def expense_keys(p: dict) -> dict[str, dict]:
         d = (l.get("description") or "").lower()
         if d.startswith(("management fee", "owner distribution")) or "revers" in (l.get("type") or "").lower():
             continue
-        key = _norm(l.get("payee", "")) + " | " + _norm(l.get("description", ""))
+        key = bill_key(l)
         if key in out:
             out[key]["amount"] = round(out[key]["amount"] + l["expense"], 2)
             out[key]["count"] += 1
@@ -213,7 +238,21 @@ def _fmt(v) -> str:
 
 # ------------------------------------------------------------------ the checks
 
-def compare(cur: dict, prev: dict | None) -> list[Change]:
+def _month_index(month: str) -> int:
+    y, m = month.split("-")
+    return int(y) * 12 + int(m) - 1
+
+
+def _month_label(month: str) -> str:
+    return datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y")
+
+
+def compare(cur: dict, history: list[dict] | None = None) -> list[Change]:
+    """cur: the month being reviewed. history: every EARLIER month on record,
+    oldest first. The month-over-month checks use the latest of those; the
+    bill checks look back through all of them."""
+    history = sorted(history or [], key=lambda m: m["month"])
+    prev = history[-1] if history else None
     changes: list[Change] = []
     cp = cur["properties"]
     pp = prev["properties"] if prev else {}
@@ -272,32 +311,93 @@ def compare(cur: dict, prev: dict | None) -> list[Change]:
             sev = "attention" if f["rent_received"] < g["rent_received"] else "note"
             add(name, sev, "Rent received changed",
                 f"Rent income {_fmt(f['rent_received'])} (was {_fmt(g['rent_received'])}).", f["rent_received"], g["rent_received"])
-        if abs(f["mgmt_fee"] - g["mgmt_fee"]) > 0.5 and not (f["mgmt_pct"] and g["mgmt_pct"] and abs(f["mgmt_pct"] - g["mgmt_pct"]) <= 0.2):
+        fee_flagged = any(c.property == name and c.what == "Management fee out of line" for c in changes)
+        if (not fee_flagged and abs(f["mgmt_fee"] - g["mgmt_fee"]) > 0.5
+                and not (f["mgmt_pct"] and g["mgmt_pct"] and abs(f["mgmt_pct"] - g["mgmt_pct"]) <= 0.2)):
             add(name, "note", "Management fee changed",
                 f"Management fee {_fmt(f['mgmt_fee'])} (was {_fmt(g['mgmt_fee'])}).", f["mgmt_fee"], g["mgmt_fee"])
-        if g["owner_payment"] and abs(f["owner_payment"] - g["owner_payment"]) > max(50.0, 0.25 * g["owner_payment"]):
-            add(name, "note", "Owner payment changed a lot",
-                f"Owner payment {_fmt(f['owner_payment'])} (was {_fmt(g['owner_payment'])}).", f["owner_payment"], g["owner_payment"])
+        # (Owner payment is left out on purpose: it moves whenever any bill is
+        # paid, so it only repeated what the bill lines below already say.
+        # It's still on the History sheet.)
         if f["bills_due"] is not None and g["bills_due"] is not None and abs(f["bills_due"] - g["bills_due"]) > 1.0:
             add(name, "note", "Bills due changed", f"Bills due {_fmt(f['bills_due'])} (was {_fmt(g['bills_due'])}).", f["bills_due"], g["bills_due"])
 
-        ce, pe = expense_keys(cp[name]), expense_keys(pp[name])
-        for key in sorted(set(ce) & set(pe)):
-            a, b = ce[key]["amount"], pe[key]["amount"]
-            if abs(a - b) > 0.5:
-                add(name, "note", "Charge amount changed",
-                    f"{ce[key]['payee']}: {ce[key]['description']} — {_fmt(a)} (was {_fmt(b)}).", a, b)
-        for key in sorted(set(ce) - set(pe)):
-            add(name, "note", "New charge",
-                f"{ce[key]['payee']}: {ce[key]['description']} — {_fmt(ce[key]['amount'])}; nothing like it last month.",
-                ce[key]["amount"])
-        for key in sorted(set(pe) - set(ce)):
-            add(name, "note", "Charge not seen this month",
-                f"{pe[key]['payee']}: {pe[key]['description']} — was {_fmt(pe[key]['amount'])} last month, nothing this month.",
-                None, pe[key]["amount"])
+    changes.extend(_bill_changes(cur, history))
     order = {"attention": 0, "note": 1}
     changes.sort(key=lambda c: (order[c.severity], c.property, c.what))
     return changes
+
+
+def _bill_changes(cur: dict, history: list[dict]) -> list[Change]:
+    """Bills compared with the last time each was paid.
+
+    * Paid this month and paid before  -> flag only if the amount differs
+      from the LAST payment of that bill, whenever that was.
+    * Paid this month, never before    -> "New charge" — unless the same payee
+      was paid on most properties this month (the quarterly tax or garbage
+      run showing up for the first time in a short history, not a one-off).
+    * Not paid this month              -> flag only if the bill's own rhythm
+      says it was due: it has been paid at least twice, every month between
+      its last payment and now is on record, and the gap since the last
+      payment has reached the gap between its last two payments.
+    """
+    if not history:
+        return []
+    out: list[Change] = []
+    cur_idx = _month_index(cur["month"])
+    on_record = {_month_index(m["month"]) for m in history} | {cur_idx}
+    cp = cur["properties"]
+
+    # Payees paid on most properties this month (portfolio-wide bill runs).
+    payee_props: dict[str, int] = {}
+    for p in cp.values():
+        for key in {k.split(" | ")[0] for k in expense_keys(p)}:
+            payee_props[key] = payee_props.get(key, 0) + 1
+    real_props = max(1, sum(1 for p in cp.values() if not p.get("duplicate")))
+    portfolio_wide = {k for k, n in payee_props.items() if real_props >= 4 and n > real_props / 2}
+
+    for name in sorted(cp):
+        cur_bills = expense_keys(cp[name])
+        past: dict[str, list[tuple[int, str, dict]]] = {}   # key -> [(month idx, month, bill)]
+        for m in history:
+            p = m["properties"].get(name)
+            if not p:
+                continue
+            for key, bill in expense_keys(p).items():
+                past.setdefault(key, []).append((_month_index(m["month"]), m["month"], bill))
+        if not any(m["properties"].get(name) for m in history):
+            continue   # a property new this month is already reported as such
+
+        for key, bill in sorted(cur_bills.items()):
+            label = f"{bill['payee']}: {bill['description']}"
+            if key in past:
+                _, when, last = max(past[key], key=lambda t: t[0])
+                if abs(bill["amount"] - last["amount"]) > 0.5:
+                    out.append(Change(name, "note", "Bill amount changed",
+                                      f"{label} — {_fmt(bill['amount'])}; last paid {_fmt(last['amount'])} "
+                                      f"in {_month_label(when)}.", bill["amount"], last["amount"]))
+            elif key.split(" | ")[0] not in portfolio_wide:
+                n = len(history)
+                out.append(Change(name, "note", "New charge",
+                                  f"{label} — {_fmt(bill['amount'])}; not paid on this property in the "
+                                  f"{n} earlier month{'s' if n != 1 else ''} on record.", bill["amount"]))
+
+        for key, occ in sorted(past.items()):
+            if key in cur_bills or len(occ) < 2:
+                continue
+            occ.sort(key=lambda t: t[0])
+            last_idx, when, last = occ[-1]
+            gap = last_idx - occ[-2][0]
+            if gap < 1 or cur_idx - last_idx < gap:
+                continue
+            if any(i not in on_record for i in range(last_idx + 1, cur_idx)):
+                continue   # a month in between isn't on record; it may have been paid then
+            rhythm = "every month" if gap == 1 else f"every {gap} months"
+            out.append(Change(name, "note", "Expected bill not paid",
+                              f"{last['payee']}: {last['description']} — usually paid {rhythm}, last "
+                              f"{_fmt(last['amount'])} in {_month_label(when)}; not paid this month.",
+                              None, last["amount"]))
+    return out
 
 
 # ------------------------------------------------------------------ the workbook
@@ -342,13 +442,14 @@ def build_workbook(destination: Path, months: dict[str, dict], cur_month: str,
     ws["A1"] = f"{cur['month_label']} — what's worth a look"
     ws["A1"].font = TITLE_FONT
     if compared_to:
-        ws["A2"] = f"Compared with {compared_to}. Red rows need attention; yellow rows are differences worth knowing about."
+        ws["A2"] = (f"Compared with {compared_to}; bills are compared with the last time each was paid. "
+                    "Red rows need attention; yellow rows are differences worth knowing about.")
     else:
         ws["A2"] = ("First month on record, so there is nothing to compare against yet. "
                     "Run last month's statement through the app and this sheet fills in. "
                     "The checks below don't need a prior month.")
     ws["A2"].font = SUB_FONT
-    _header(ws, 4, ["Property", "What", "Detail", "This month", "Last month"], [34, 26, 90, 14, 14])
+    _header(ws, 4, ["Property", "What", "Detail", "This month", "Before"], [30, 20, 62, 12, 12])
     r = 5
     if not changes:
         ws.cell(row=r, column=1, value="Nothing stood out this month.")
@@ -367,33 +468,63 @@ def build_workbook(destination: Path, months: dict[str, dict], cur_month: str,
     ws = wb.create_sheet("This month")
     ws["A1"] = f"{cur['month_label']} — every property at a glance"
     ws["A1"].font = TITLE_FONT
-    cols = ["Property", "Tenant", "Status", "Rent roll (rent + recurring)", "Rent received", "Other income",
-            "Total income", "Mgmt fee", "Mgmt %", "Other expenses", "Total expenses", "Owner payment",
-            "Net income (income stmt)", "Net income YTD", "Beginning cash", "Ending cash", "Bills due", "Past due"]
-    widths = [34, 22, 10, 14, 13, 12, 13, 11, 8, 13, 13, 13, 14, 14, 13, 13, 11, 11]
-    _header(ws, 3, cols, widths)
-    r = 4
-    tot = [0.0] * len(cols)
-    for name in sorted(cur["properties"]):
-        f = figures(cur["properties"][name])
-        row = [name, f["tenant"], f["status"], f["scheduled_rent"], f["rent_received"], f["other_income"],
-               f["total_income"], f["mgmt_fee"], f["mgmt_pct"], f["other_expense"], f["total_expense"],
-               f["owner_payment"], f["net_income"], f["net_income_ytd"], f["beginning_cash"], f["ending_cash"],
-               f["bills_due"], f["past_due"]]
-        for i, v in enumerate(row, 1):
-            cell = ws.cell(row=r, column=i, value=v)
-            if isinstance(v, (int, float)) and i != 9:
-                cell.number_format = MONEY
-                tot[i - 1] += v
-            elif i == 9 and isinstance(v, (int, float)):
-                cell.number_format = '0.0"%"'
-        r += 1
-    ws.cell(row=r, column=1, value="Total").font = Font(bold=True)
-    for i in range(4, len(cols) + 1):
-        if i == 9:
-            continue
-        cell = ws.cell(row=r, column=i, value=round(tot[i - 1], 2))
-        cell.number_format, cell.font = MONEY, Font(bold=True)
+    # Two tables stacked one above the other, split between Total expenses
+    # and Owner payment, with Property and Tenant repeated on both — one long
+    # row didn't fit a desktop screen and was hard to read on a tablet.
+    names = sorted(cur["properties"])
+    figs = {n: figures(cur["properties"][n]) for n in names}
+    upper = [("Status", "status", None), ("Rent due (rent roll)", "scheduled_rent", MONEY),
+             ("Rent received", "rent_received", MONEY), ("Other income", "other_income", MONEY),
+             ("Total income", "total_income", MONEY), ("Mgmt fee", "mgmt_fee", MONEY),
+             ("Mgmt %", "mgmt_pct", '0.0"%"'), ("Other expenses", "other_expense", MONEY),
+             ("Total expenses", "total_expense", MONEY)]
+    lower = [("Owner payment", "owner_payment", MONEY), ("Net income", "net_income", MONEY),
+             ("Net income YTD", "net_income_ytd", MONEY), ("Beginning cash", "beginning_cash", MONEY),
+             ("Ending cash", "ending_cash", MONEY), ("Bills due", "bills_due", MONEY),
+             ("Past due", "past_due", MONEY)]
+
+    def table(first_row: int, title: str, spec) -> int:
+        ws.cell(row=first_row, column=1, value=title).font = Font(bold=True, size=12)
+        hdr = first_row + 1
+        text_cols = {1, 2} | {3 + j for j, s in enumerate(spec) if s[2] is None}
+        for i, lab in enumerate(["Property", "Tenant"] + [s[0] for s in spec], 1):
+            c = ws.cell(row=hdr, column=i, value=lab)
+            c.fill, c.font = HEAD_FILL, HEAD_FONT
+            c.alignment = Alignment(vertical="center", horizontal="left" if i in text_cols else "center", wrap_text=True)
+        ws.row_dimensions[hdr].height = 32
+        r = hdr + 1
+        totals = [0.0] * len(spec)
+        for n in names:
+            ws.cell(row=r, column=1, value=n)
+            ws.cell(row=r, column=2, value=figs[n]["tenant"])
+            for j, (_, key, fmt) in enumerate(spec):
+                v = figs[n][key]
+                cell = ws.cell(row=r, column=3 + j, value=v)
+                if fmt and isinstance(v, (int, float)):
+                    cell.number_format = fmt
+                    if fmt == MONEY:
+                        totals[j] += v
+            r += 1
+        ws.cell(row=r, column=1, value="Total").font = Font(bold=True)
+        for j, (_, key, fmt) in enumerate(spec):
+            if fmt == MONEY:
+                cell = ws.cell(row=r, column=3 + j, value=round(totals[j], 2))
+                cell.number_format, cell.font = MONEY, Font(bold=True)
+        for col in range(1, 3 + len(spec)):
+            ws.cell(row=r, column=col).border = Border(top=THIN)
+        return r + 1
+
+    next_row = table(3, "Income and expenses", upper)
+    table(next_row + 1, "Owner payment and balances", lower)
+    # Property fits the longest real name; column C holds Status (upper) and
+    # Owner payment (lower), so it's wide enough for "Vacant-Unrented".
+    widths = [35, 20, 15] + [12] * (max(len(upper), len(lower)) - 1)
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "C2"      # Property and Tenant stay put when scrolling sideways
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
     # ---- History
     ws = wb.create_sheet("History")
@@ -478,9 +609,9 @@ def update_summary(destination: Path, plan, reader) -> SummaryResult:
     months = load_months(destination)
     months[month_data["month"]] = month_data
     latest = max(months)
-    earlier = [m for m in sorted(months) if m < latest]
-    prev = months[earlier[-1]] if earlier else None
-    changes = compare(months[latest], prev)
+    history = [months[m] for m in sorted(months) if m < latest]
+    prev = history[-1] if history else None
+    changes = compare(months[latest], history)
     wb = build_workbook(destination, months, latest, changes, prev["month_label"] if prev else None)
     return SummaryResult(workbook=wb, month=latest, month_label=months[latest]["month_label"],
                          compared_to=prev["month_label"] if prev else None, changes=changes,

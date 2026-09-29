@@ -42,6 +42,8 @@ from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
 
+from ledger import kind_from_text
+
 # "004 - 01 - 123 Main Street"   also tolerates   "004-01- 123 Main Street"
 CODE_LINE_RE = re.compile(r"^\s*(\d{3})\s*-\s*(\d{2})\s*-\s*(.+?)\s*$")
 
@@ -172,6 +174,11 @@ def plan_split(source: Path) -> SplitPlan:
     sections: list[Section] = []
     current: Section | None = None
     seen_codes: dict[str, int] = {}
+    # A property's section always ends with its Rent Roll page. A page after
+    # that which isn't one of AppFolio's reports (a bill copy appended to the
+    # packet, say) doesn't belong to that property — file it as unsorted
+    # rather than silently gluing it onto the last property's file.
+    after_rentroll = False
 
     for idx in range(total):
         page_no = idx + 1
@@ -212,12 +219,25 @@ def plan_split(source: Path) -> SplitPlan:
                     )
             current = Section(code=code, address=address, first_page=page_no,
                               last_page=page_no, duplicate_of=dup)
+            after_rentroll = False
         else:
+            kind = kind_from_text(text)
             if current is None:
                 # Pages before the first Owner Statement (cover letter etc.)
                 current = Section(code=None, address="", first_page=page_no, last_page=page_no)
+            elif current.code is not None and after_rentroll and kind == "other":
+                owner = current.folder_name
+                sections.append(current)
+                current = Section(code=None, address="", first_page=page_no, last_page=page_no)
+                plan.warnings.append(
+                    f"Page {page_no} onward came after the last report for {owner} and isn't one of "
+                    f"AppFolio's reports (a bill copy, perhaps). Filed under '{UNSORTED_NAME}' so it "
+                    f"isn't mixed in with that property."
+                )
             else:
                 current.last_page = page_no
+            if kind == "rentroll":
+                after_rentroll = True
 
     if current is not None:
         sections.append(current)

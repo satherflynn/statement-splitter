@@ -1,5 +1,23 @@
 # What's new
 
+## 1.3 — September 29, 2026
+
+- **"What changed" is much shorter.** Bills are now compared with the last
+  time *that bill* was paid, not with last month. Garbage and property tax
+  are paid quarterly, so the month-to-month comparison was filling the list
+  with "new charge" and "not seen this month" lines. A bill is now flagged
+  only when its amount differs from its last payment, when it's a genuinely
+  new charge on that property, or when it was due by its own rhythm (monthly,
+  quarterly) and wasn't paid. The "owner payment changed" lines are gone too;
+  they only repeated what the bill lines already said.
+- **The "This month" sheet is two tables, one above the other** — income and
+  expenses first, then owner payment and balances — with Property and Tenant
+  on both, so it fits the screen and reads on a tablet. It also prints on one
+  landscape page.
+- **Pages that don't belong to any property** (for example, bill copies added
+  after the last property's reports) now go to an "Unsorted pages" folder
+  with a note, instead of being added to the last property's file.
+
 ## 1.2 — September 15, 2026
 
 The app now reads the figures off every page and keeps a **Monthly Summary**

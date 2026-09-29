@@ -24,10 +24,14 @@ date, with four sheets:
 - **What changed** — this month against the previous month on record, one
   line per thing worth a look: tenant or rent changed, rent not received,
   tenant past due, management fee out of line with the other properties,
-  charges that appeared / disappeared / changed amount, reversal entries
-  that don't net to zero, negative cash balance, property missing or new.
-- **This month** — every property on one row: rent roll, rent received,
-  income, fees, expenses, owner payment, net income, cash, bills due, past due.
+  reversal entries that don't net to zero, negative cash balance, property
+  missing or new. **Bills are compared with the last time that bill was
+  paid** (identified by payee + account/parcel number), so quarterly bills
+  don't show up as "new" or "missing" every month; a bill is flagged when its
+  amount changed since its last payment, when it's new on that property, or
+  when its own rhythm says it was due and it wasn't paid.
+- **This month** — every property in two stacked tables (income & expenses,
+  then owner payment & balances) with Property and Tenant on both.
 - **History** — property × month grids for the figures worth trending.
 - **Ledger** — every transaction from every month, filterable.
 
@@ -89,7 +93,7 @@ when it opens and shows a Download button if a newer version exists.
 source venv/bin/activate
 python splitter.py packet.pdf                # dry run: shows the plan only
 python splitter.py packet.pdf ~/out          # …and writes the files
-python make_sample_packet.py samples/        # two fictional months with planted differences
+python make_sample_packet.py samples/        # four fictional months (May–Aug), realistic billing, planted differences
 python test_splitter.py                      # regression test: split + comparison on the samples
 python make_icon.py                          # redraw appicon.icns / .png
 rm -rf build "dist/Statement Splitter.app" && python setup.py py2app --no-strip

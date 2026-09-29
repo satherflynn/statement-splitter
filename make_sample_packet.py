@@ -3,18 +3,24 @@
 
 Lays every report out in the same fixed columns AppFolio uses (so ledger.py's
 position-based reader is exercised, wrapped payees and all), with made-up
-addresses, tenants and amounts. Builds TWO months — July and August — with a
-handful of deliberate differences between them so summary.py's comparison has
-something to find:
+addresses, tenants and amounts. Builds FOUR months, May–August, billed the
+way the real statements are: water every month, garbage every quarter (May and
+August), property tax in August. That rhythm matters — a month-to-month
+comparison of quarterly bills is exactly the noise the real owner found
+"too ponderous", and two monthly-billed test months hid it.
 
+Deliberate differences in August, for summary.py to find:
+
+  004-01  garbage bill $71.04 in May, $74.10 in August (compare with last payment)
   004-02  rent went up ($900 → $950) and the tenant changed
   004-03  no management fee charged in August (0% — out of line)
   004-05  water bill missing in August; a new "Plumbing repair" charge appears
   004-06  tenant fell $450 past due; rent roll status "Current"
   004-07  reversal entries that don't net to zero; ending cash negative
   phantom duplicate of 004-01 in August only
+  two bill-copy pages appended after the last property (-> Unsorted pages)
 
-Run:  python make_sample_packet.py [outdir]     -> Sample Owner Packet July.pdf / August.pdf
+Run:  python make_sample_packet.py [outdir]     -> Sample Owner Packet May…August.pdf
 """
 import sys
 from pathlib import Path
@@ -166,11 +172,25 @@ def rent_roll(c, month, code, addr, tenant, rent, recurring, deposit, past_due, 
 
 
 MONTHS = {
+    "may": {"period": "28 Apr 2026-28 May 2026", "begin_date": "04/28/2026", "as_of": "May 2026",
+            "as_of_date": "05/28/2026", "created": "05/31/2026", "d": "05", "name": "May"},
+    "june": {"period": "28 May 2026-28 Jun 2026", "begin_date": "05/28/2026", "as_of": "Jun 2026",
+             "as_of_date": "06/28/2026", "created": "06/30/2026", "d": "06", "name": "June"},
     "july": {"period": "28 Jun 2026-28 Jul 2026", "begin_date": "06/28/2026", "as_of": "Jul 2026",
-             "as_of_date": "07/28/2026", "created": "07/31/2026", "d": "07"},
+             "as_of_date": "07/28/2026", "created": "07/31/2026", "d": "07", "name": "July"},
     "august": {"period": "28 Jul 2026-28 Aug 2026", "begin_date": "07/28/2026", "as_of": "Aug 2026",
-               "as_of_date": "08/28/2026", "created": "08/31/2026", "d": "08"},
+               "as_of_date": "08/28/2026", "created": "08/31/2026", "d": "08", "name": "August"},
 }
+QUARTERLY_GARBAGE = ("may", "august")
+
+
+def bill_copy(c, payee, lines):
+    """A bill copy like the ones that arrive with the statement: not an AppFolio report."""
+    txt(c, 72, 720, payee, 16)
+    y = 690
+    for line in lines:
+        txt(c, 72, y, line, 11); y -= 18
+    c.showPage()
 
 
 def build_month(out: Path, which: str):
@@ -178,6 +198,8 @@ def build_month(out: Path, which: str):
     d = m["d"]
     c = canvas.Canvas(str(out), pagesize=LETTER)
     aug = which == "august"
+    mname = m["name"]
+    mno = int(d)
     for code, addr, tenant, rent, recurring, deposit in PROPERTIES:
         past_due, status = 0.00, "Current"
         if aug and code == "004 - 02":
@@ -188,7 +210,7 @@ def build_month(out: Path, which: str):
         if aug and code == "004 - 03":
             fee = 0.0
         led = [
-            (f"{d}/01/2026", tenant, "Receipt", "", f"Rent Income - {'August' if aug else 'July'} 2026", rent - (past_due if past_due else 0), None),
+            (f"{d}/01/2026", tenant, "Receipt", "", f"Rent Income - {mname} 2026", rent - (past_due if past_due else 0), None),
         ]
         if recurring:
             led.append((f"{d}/01/2026", tenant, "Receipt", "", "Garbage and Recycling", recurring, None))
@@ -198,7 +220,10 @@ def build_month(out: Path, which: str):
             led.append((f"{d}/05/2026", "Somewhere Water Co.", "Payment", "online pay", "Water - 040160-000", None, 61.25))
         if aug and code == "004 - 05":
             led.append((f"{d}/09/2026", "Ace Plumbing Inc.", "Check", "1778" + d[-1], "Plumbing repair - kitchen drain", None, 285.00))
-        led.append((f"{d}/11/2026", "Waste Management", "Check", "17742" + d[-1], f"Garbage and Recycling - 6-18078-65003 - {'August' if aug else 'July'} 2026", None, 71.04))
+        garbage = 0.0
+        if which in QUARTERLY_GARBAGE:
+            garbage = 74.10 if (aug and code == "004 - 01") else 71.04
+            led.append((f"{d}/11/2026", "Waste Management", "Check", "17742" + d[-1], f"Garbage and Recycling - 6-18078-65003 - {mname} 2026", None, garbage))
         tax = round(rent * 0.036, 2)
         if aug:
             for mo in ("April", "May", "June", "July"):
@@ -213,27 +238,34 @@ def build_month(out: Path, which: str):
         if aug and code == "004 - 07":
             owner = round(owner + 300.00, 2)   # pays out too much -> negative ending cash
         led.append((f"{d}/27/2026", "Sample Owner", "ACH payment", "", f"Owner Distribution - Owner payment for {d}/2026", None, owner))
-        bills = [(f"{d}/01/2026", "Property Tax Reserve", f"{'August' if aug else 'July'} 2026", tax)]
+        bills = [(f"{d}/01/2026", "Property Tax Reserve", f"{mname} 2026", tax)]
         owner_statement(c, m, code, addr, led, begin, bills, page_two=(len(led) > 9))
         total_income = round(inc, 2); total_expense = round(exp - 0, 2)
-        income_statement(c, m, code, addr, total_income, round(fee + 61.25 + 71.04, 2), total_income * (8 if aug else 7), round((fee + 132.29) * (8 if aug else 7), 2))
+        income_statement(c, m, code, addr, total_income, round(fee + 61.25 + garbage, 2), total_income * mno, round((fee + 132.29) * mno, 2))
         rent_roll(c, m, code, addr, tenant, rent, recurring, deposit, past_due, status)
     if aug:  # the phantom duplicate: no activity, negative balance, vacant
         code, addr = "004-01", "123 Main Street"
         owner_statement(c, m, code, addr, [], -105.09, [], page_two=False)
         income_statement(c, m, code, addr, 0.0, 0.0, 0.0, 105.09)
         rent_roll(c, m, code, addr, "", 0.0, 0.0, 0.0, 0.0, "Vacant-Unrented")
+        # Bill copies appended after the last property — they must NOT be filed with it.
+        bill_copy(c, "Waste Management", ["Invoice 4471-0826", "Account 6-18078-65003",
+                                          "Service address: 123 Main Street", "Amount due: $74.10"])
+        bill_copy(c, "Ace Plumbing Inc.", ["Invoice 2208", "Kitchen drain cleared",
+                                           "Service address: 4410 Meadow Lane", "Amount due: $285.00"])
     c.save()
 
 
-def build(outdir: str | Path = ".") -> tuple[Path, Path]:
+def build(outdir: str | Path = ".") -> list[Path]:
+    """Write the four months; returns their paths, oldest first."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    jul = outdir / "Sample Owner Packet July.pdf"
-    aug = outdir / "Sample Owner Packet August.pdf"
-    build_month(jul, "july")
-    build_month(aug, "august")
-    return jul, aug
+    paths = []
+    for key in ("may", "june", "july", "august"):
+        out = outdir / f"Sample Owner Packet {MONTHS[key]['name']}.pdf"
+        build_month(out, key)
+        paths.append(out)
+    return paths
 
 
 if __name__ == "__main__":

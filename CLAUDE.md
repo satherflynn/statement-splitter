@@ -32,6 +32,14 @@ run commands directly.
   Management fee % is measured against *scheduled* rent (rent roll rent +
   recurring), because the manager charges on scheduled rent whether or not
   the tenant paid. "Section 8 Rent" counts as rent.
+  **Bills** (`_bill_changes`) are keyed by payee + account/parcel number
+  (`bill_key`) and compared with the *last payment of that bill* across all
+  months on record — never month-to-month, because garbage and property tax
+  are quarterly (the owner's first feedback, Sep 2026, was that month-to-month
+  bill lines made the list "too ponderous"). "Expected bill not paid" needs
+  ≥2 prior payments to know the rhythm and every month in between on record.
+  A first-ever bill whose payee was paid on most properties this month is a
+  portfolio-wide run (tax/garbage), not a "New charge".
 - `app.py` — the Tkinter window. Two cards (PDF, destination), one button,
   a results box that shows *what changed* first, then the filing list;
   buttons to open the summary workbook and the folder. Destination remembered
@@ -45,9 +53,13 @@ run commands directly.
   shows a Download banner if it's newer than `APP_VERSION`. Fails silently offline.
 - `sign_and_notarize.sh` + `entitlements.plist` — Developer ID signing and
   Apple notarization of the .app and .dmg (see "Releasing" below).
-- `make_sample_packet.py` / `test_splitter.py` — two fictional months (July,
-  August) drawn in AppFolio's real column positions with planted differences;
-  the test asserts both the split and the comparison flags.
+- `make_sample_packet.py` / `test_splitter.py` — four fictional months
+  (May–August) drawn in AppFolio's real column positions and billed like the
+  real thing (water monthly, garbage quarterly, tax in August), with planted
+  differences and two bill copies appended to August. The test asserts the
+  split, that May–July produce **no** changes, and August's exact flags.
+  Keep the billing rhythm realistic — the two-month, bill-every-month sample
+  is why the quarterly-bill noise wasn't caught before release 1.2.
 
 ## Releasing a new version
 
