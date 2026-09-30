@@ -29,6 +29,15 @@ ENT="entitlements.plist"
 
 [ -d "$APP" ] || { echo "ERROR: $APP not found — build it first (python setup.py py2app --no-strip)"; exit 1; }
 
+# Compiled code inside the python zip can't be signed and Apple rejects it —
+# catch that here rather than after a long notarization wait.
+ZIP="$(ls "$APP"/Contents/Resources/lib/python*.zip 2>/dev/null | head -1)"
+if [ -n "$ZIP" ] && unzip -l "$ZIP" | grep -qE '\.(so|dylib)$'; then
+  echo "ERROR: compiled binaries inside $ZIP cannot be signed:"
+  unzip -l "$ZIP" | grep -E '\.(so|dylib)$' | awk '{print "   " $4}'
+  exit 1
+fi
+
 IDENTITY="$(security find-identity -v -p codesigning | grep "Developer ID Application" | grep "$TEAM_ID" | head -1 | sed -E 's/.*"(.*)".*/\1/')"
 [ -n "$IDENTITY" ] || { echo "ERROR: no 'Developer ID Application' certificate for team $TEAM_ID in the keychain."; exit 1; }
 echo "Signing with: $IDENTITY"

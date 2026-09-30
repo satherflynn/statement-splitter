@@ -8,3 +8,5 @@ appicon.iconset/
 # Never commit a real statement — they contain Steve's financial data.
 *.pdf
 !Install Guide (Mac).pdf
+# Staged scanned-bill reader (tesseract + poppler), rebuilt by stage_mac_ocr.py
+vendor_mac/

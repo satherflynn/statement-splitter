@@ -36,6 +36,16 @@ date, with four sheets:
 - **History** — property × month grids for the figures worth trending.
 - **Ledger** — every transaction from every month, filterable.
 
+**Bill copies.** AppFolio's download also holds one PDF per bill paid that
+month, named `bill_<invoice number>.pdf`, usually scanned and often
+handwritten. Choose them together with the statement (or choose the .zip).
+The app reads each bill's printed company name (text recognition, on the
+Mac), finds that month's payment to the company on the statement, and copies
+the bill into that property's folder as `<YYYY-MM> bill - <Payee> (<number>).pdf`.
+If the company was paid on several properties, the amount, account number or
+street address on the bill picks the one; if nothing does, the bill goes to
+`Unsorted pages` with the reason.
+
 The same "what changed" list is shown in the app window right after the
 split. Run earlier months in any order and the history fills in; each month
 is stored as a small JSON file under `Monthly Summary/data/`.
@@ -94,7 +104,7 @@ when it opens and shows a Download button if a newer version exists.
 source venv/bin/activate
 python splitter.py packet.pdf                # dry run: shows the plan only
 python splitter.py packet.pdf ~/out          # …and writes the files
-python make_sample_packet.py samples/        # four fictional months (May–Aug), realistic billing, planted differences
+python make_sample_packet.py samples/        # four fictional months (May–Aug) + three August bill copies
 python test_splitter.py                      # regression test: split + comparison on the samples
 python make_icon.py                          # redraw appicon.icns / .png
 rm -rf build "dist/Statement Splitter.app" && python setup.py py2app --no-strip

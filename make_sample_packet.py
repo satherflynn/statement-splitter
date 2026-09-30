@@ -20,7 +20,15 @@ Deliberate differences in August, for summary.py to find:
   phantom duplicate of 004-01 in August only
   two bill-copy pages appended after the last property (-> Unsorted pages)
 
-Run:  python make_sample_packet.py [outdir]     -> Sample Owner Packet May…August.pdf
+Plus three separate bill copies for August, the way AppFolio delivers them
+(one PDF each, named bill_<invoice number>.pdf):
+  bill_4471.pdf  Waste Management, $74.10, 123 Main Street — garbage is paid on
+                 every property, so the amount and address must pick 004-01
+  bill_2208.pdf  Ace Plumbing, $285.00 — a SCANNED picture with no text layer,
+                 so it has to be read with text recognition -> 004-05
+  bill_9001.pdf  Sierra Snow Removal — paid nowhere this month -> Unsorted pages
+
+Run:  python make_sample_packet.py [outdir]     -> Sample Owner Packet May…August.pdf + bill_*.pdf
 """
 import sys
 from pathlib import Path
@@ -256,6 +264,42 @@ def build_month(out: Path, which: str):
     c.save()
 
 
+def _text_bill(out: Path, payee: str, lines: list[str]) -> None:
+    c = canvas.Canvas(str(out), pagesize=LETTER)
+    bill_copy(c, payee, lines)
+    c.save()
+
+
+def _scanned_bill(out: Path, payee: str, lines: list[str]) -> None:
+    """An image-only PDF, like a scanner makes: no text layer at all."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (1700, 2200), "white")
+    d = ImageDraw.Draw(img)
+    try:
+        big = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 72)
+        small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 44)
+    except OSError:
+        big = small = ImageFont.load_default()
+    d.text((150, 150), payee, fill="black", font=big)
+    y = 320
+    for line in lines:
+        d.text((150, y), line, fill="black", font=small); y += 80
+    img.save(out, "PDF", resolution=200)
+
+
+def build_bills(outdir: str | Path = ".") -> list[Path]:
+    """August's bill copies, one PDF each as AppFolio delivers them."""
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    wm, ace, snow = outdir / "bill_4471.pdf", outdir / "bill_2208.pdf", outdir / "bill_9001.pdf"
+    _text_bill(wm, "Waste Management", ["Invoice 4471", "Account 6-18078-65003",
+                                        "Service address: 123 Main Street", "Amount due: $74.10"])
+    _scanned_bill(ace, "Ace Plumbing Inc.", ["Invoice 2208", "Kitchen drain cleared",
+                                             "Job site: 4410 Meadow Lane", "Total: $285.00"])
+    _text_bill(snow, "Sierra Snow Removal", ["Invoice 9001", "Driveway plowing", "Amount due: $120.00"])
+    return [wm, ace, snow]
+
+
 def build(outdir: str | Path = ".") -> list[Path]:
     """Write the four months; returns their paths, oldest first."""
     outdir = Path(outdir)
@@ -269,5 +313,6 @@ def build(outdir: str | Path = ".") -> list[Path]:
 
 
 if __name__ == "__main__":
-    for p in build(sys.argv[1] if len(sys.argv) > 1 else "."):
+    out = sys.argv[1] if len(sys.argv) > 1 else "."
+    for p in build(out) + build_bills(out):
         print("wrote", p)

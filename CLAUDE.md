@@ -43,6 +43,18 @@ run commands directly.
   bookkeeping and excluded from bills.
   A first-ever bill whose payee was paid on most properties this month is a
   portfolio-wide run (tax/garbage), not a "New charge".
+- `bills.py` — files bill copies (`bill_<invoice #>.pdf`, scanned, often
+  handwritten) with their property. `sort_inputs()` picks the statement out of
+  the chosen files / .zip; `bill_text()` uses the text layer or tesseract on
+  the first 2 pages; `match_bill()` finds this month's payments whose payee
+  (letters only) appears in the bill text — one property wins outright, else
+  amount / account # / street address must single one out, else Unsorted.
+  The invoice # is NOT printed on the statement (checked on the real Sept
+  2026 packet); payee + amount is what links them. Validated: the real
+  real Sept 2026 bill (a handwritten plumber's ticket) → the one property
+  with a payment to that plumber for that amount.
+- `stage_mac_ocr.py` — copied from check-register-app: stages tesseract +
+  poppler (arm64, from Homebrew) into `vendor_mac/` for setup.py to bundle.
 - `app.py` — the Tkinter window. Two cards (PDF, destination), one button,
   a results box that shows *what changed* first, then the filing list;
   buttons to open the summary workbook and the folder. Destination remembered

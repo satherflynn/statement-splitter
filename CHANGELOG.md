@@ -1,5 +1,16 @@
 # What's new
 
+## 1.5 — September 30, 2026
+
+- **Bill copies are filed with their property.** Choose the owner packet and
+  the bill_ files that came with it (or the .zip) together. The app reads each
+  bill's printed company name, finds the payment to that company on the
+  month's statement, and saves a copy in that property's folder as
+  "2026-08 bill - Ace Plumbing (2208).pdf". When a company is paid on several
+  properties, the amount, account number or address on the bill decides. A
+  bill it can't place goes to "Unsorted pages" with the reason.
+- Scanned bills are read on the Mac itself; nothing is sent anywhere.
+
 ## 1.4 — September 29, 2026
 
 - **Property tax no longer shows up as a missing bill.** Tax installments

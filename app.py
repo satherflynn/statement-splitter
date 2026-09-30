@@ -26,7 +26,8 @@ from tkinter import filedialog, messagebox, ttk
 from pypdf import PdfReader
 
 from splitter import plan_split, write_split
-from summary import update_summary, SummaryResult, NotSummarised
+from summary import update_summary, SummaryResult, NotSummarised, collect_month, load_months
+import bills
 from update_check import newer_release
 from version import APP_NAME, APP_VERSION, resource_base, version_line
 
@@ -93,6 +94,7 @@ class App(tk.Tk):
 
         self.settings = load_settings()
         self.source: Path | None = None
+        self.inputs: bills.Inputs | None = None
         self.destination = Path(self.settings.get("destination") or default_destination())
         self.last_written_folder: Path | None = None
         self._busy = False
@@ -135,7 +137,7 @@ class App(tk.Tk):
         titles.pack(side="left", fill="x", expand=True)
         ttk.Label(titles, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         self.subtitle = ttk.Label(titles, style="Sub.TLabel", wraplength=560,
-                                  text="Files each property's pages from the monthly AppFolio owner packet, "
+                                  text="Files each property's pages and bill copies from the monthly AppFolio download, "
                                        "and shows what changed since last month.")
         self.subtitle.pack(anchor="w")
 
@@ -151,11 +153,13 @@ class App(tk.Tk):
         self.after(800, self._start_update_check)
 
         # Step 1 — the PDF
-        c1 = self._card(outer, "1.  The statement to split")
-        self.source_label = ttk.Label(c1, text="The monthly owner packet you download from AppFolio. No file chosen yet.",
+        c1 = self._card(outer, "1.  The statement and its bill copies")
+        self.source_label = ttk.Label(c1, text="Choose the owner packet you downloaded from AppFolio and the bill_ files "
+                                               "that came with it (hold ⌘ to pick several), or the .zip. "
+                                               "No files chosen yet.",
                                       style="Value.TLabel", wraplength=560)
         self.source_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
-        ttk.Button(c1, text="Choose PDF…", style="Action.TButton", width=13,
+        ttk.Button(c1, text="Choose files…", style="Action.TButton", width=13,
                    command=self.choose_pdf).grid(row=0, column=1, rowspan=2, sticky="e", padx=(12, 0))
         c1.columnconfigure(0, weight=1)
 
@@ -205,9 +209,11 @@ class App(tk.Tk):
         self.results.tag_configure("warnitem", foreground="#9a3412", lmargin1=30, lmargin2=44)
         self.results.tag_configure("muted", foreground=MUTED)
         self.results.tag_configure("mono", font=("Menlo", 12), lmargin1=14, lmargin2=14)
-        self._say("Choose the statement PDF to begin.\n\n"
+        self.results.tag_configure("warnmono", font=("Menlo", 12), lmargin1=14, lmargin2=14, foreground="#9a3412")
+        self._say("Choose the statement and its bill copies to begin.\n\n"
                   "Each property's pages will be saved as one file per month, inside a folder "
-                  "named for that property. The app also reads the figures off every page and "
+                  "named for that property, and each bill copy goes into the folder of the property "
+                  "it was paid for. The app also reads the figures off every page and "
                   "keeps a Monthly Summary workbook up to date: what changed since last month, "
                   "every property at a glance, month-by-month history, and a searchable ledger.")
 
@@ -272,22 +278,41 @@ class App(tk.Tk):
     # ---- actions ----------------------------------------------------------
     def choose_pdf(self) -> None:
         start = self.settings.get("last_source_dir") or str(Path.home() / "Downloads")
-        path = filedialog.askopenfilename(
-            title="Choose the monthly statement",
+        paths = filedialog.askopenfilenames(
+            title="Choose the statement and its bill copies",
             initialdir=start if Path(start).is_dir() else str(Path.home()),
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*")],
+            filetypes=[("PDF or ZIP", ("*.pdf", "*.zip")), ("All files", "*")],
         )
-        if path:
-            self._set_source(Path(path))
+        if paths:
+            self._set_sources([Path(p) for p in paths])
 
     def _set_source(self, path: Path) -> None:
-        self.source = path
-        self.source_label.configure(text=path.name)
-        self.go_button.configure(state="normal")
-        self.settings["last_source_dir"] = str(path.parent)
+        self._set_sources([path])
+
+    def _set_sources(self, paths: list[Path]) -> None:
+        if self.inputs is not None:
+            self.inputs.cleanup()
+        self.inputs = inp = bills.sort_inputs(paths)
+        self.settings["last_source_dir"] = str(paths[0].parent)
         save_settings(self.settings)
-        self._say_parts([(f"Ready to split “{path.name}”.\n", "title"),
-                         ("Click “Split the statement”.\n", "item")])
+        if inp.statement is None:
+            self.source = None
+            self.go_button.configure(state="disabled")
+            self.source_label.configure(text="None of the chosen files is an AppFolio owner statement.")
+            self._say_parts([("That doesn't look like the statement.\n", "title"),
+                             ("Choose the owner packet PDF (and its bill_ files, if any), or the .zip "
+                              "you downloaded from AppFolio.\n", "item")])
+            return
+        self.source = inp.statement
+        n = len(inp.bills)
+        extra = f" + {n} bill cop{'y' if n == 1 else 'ies'}" if n else ""
+        self.source_label.configure(text=inp.statement.name + extra)
+        self.go_button.configure(state="normal")
+        parts = [(f"Ready to split “{inp.statement.name}”{extra}.\n", "title"),
+                 ("Click “Split the statement”.\n", "item")]
+        for note in inp.notes:
+            parts.append((note + "\n", "warnitem"))
+        self._say_parts(parts)
 
     def choose_destination(self) -> None:
         start = self.destination if self.destination.is_dir() else self.destination.parent
@@ -309,6 +334,7 @@ class App(tk.Tk):
         self.go_button.configure(state="disabled", text="Splitting…")
         self._say_parts([("Reading the statement…\n", "title")])
         src, dest = self.source, self.destination
+        bill_files = list(self.inputs.bills) if self.inputs else []
 
         # The work runs on a helper thread so the window stays responsive;
         # the result comes back through a queue that the main thread polls
@@ -327,7 +353,14 @@ class App(tk.Tk):
                     summary_error = str(why)
                 except Exception:  # the split succeeded; say so, and show why the summary didn't
                     summary_error = traceback.format_exc().strip().splitlines()[-1]
-                outcome.put(("ok", plan, written, summary, summary_error))
+                bill_results, bill_error = [], None
+                if bill_files:
+                    try:
+                        month = load_months(dest).get(plan.month) or collect_month(plan, PdfReader(str(src)))
+                        bill_results = bills.file_bills(bill_files, month, dest)
+                    except Exception:
+                        bill_error = traceback.format_exc().strip().splitlines()[-1]
+                outcome.put(("ok", plan, written, summary, summary_error, bill_results, bill_error))
             except Exception as exc:  # show it, don't die silently
                 outcome.put(("error", exc, traceback.format_exc()))
 
@@ -341,11 +374,12 @@ class App(tk.Tk):
             self.after(100, lambda: self._poll(outcome))
             return
         if result[0] == "ok":
-            self._finish(result[1], result[2], result[3], result[4])
+            self._finish(*result[1:])
         else:
             self._fail(result[1], result[2])
 
-    def _finish(self, plan, written, summary: "SummaryResult | None", summary_error: str | None) -> None:
+    def _finish(self, plan, written, summary: "SummaryResult | None", summary_error: str | None,
+                bill_results=(), bill_error: str | None = None) -> None:
         self._busy = False
         self.go_button.configure(state="normal", text="Split the statement")
         self.last_written_folder = self.destination
@@ -389,12 +423,26 @@ class App(tk.Tk):
             lines.append(("The pages were filed, but the Monthly Summary was not updated.\n", "head"))
             lines.append((summary_error + "\n", "warnitem"))
 
+        if bill_results or bill_error:
+            filed = [r for r in bill_results if r.matched]
+            lines.append((f"Bill copies ({len(filed)} of {len(bill_results)} filed with their property)\n", "head"))
+            for r in bill_results:
+                if r.matched:
+                    amt = f", ${r.amount:,.2f}" if r.amount is not None else ""
+                    lines.append((f"{r.source.name}  ›  {r.folder}   ({r.payee}{amt})\n", "mono"))
+                else:
+                    lines.append((f"{r.source.name}  ›  Unsorted pages: {r.reason}.\n", "warnmono"))
+            if any(not r.matched and "couldn't be read" in r.reason for r in bill_results) and not bills.reader_available():
+                lines.append(("This Mac can't read scanned bills, so they were filed under Unsorted pages.\n", "muted"))
+            if bill_error:
+                lines.append((f"The bill copies couldn't be filed: {bill_error}\n", "warnitem"))
+
         lines.append(("Filed\n", "head"))
         for w in written:
             s = w.section
             pages = f"{s.page_count} page{'s' if s.page_count != 1 else ''}"
             note = "   (replaced last copy)" if w.replaced else ""
-            lines.append((f"{s.folder_name}  ›  {w.path.name}   {pages}{note}\n", "mono" if s.code else "warnitem"))
+            lines.append((f"{s.folder_name}  ›  {w.path.name}   {pages}{note}\n", "mono" if s.code else "warnmono"))
         if n_replaced:
             lines.append((f"{n_replaced} file{'s' if n_replaced != 1 else ''} for this month "
                           "already existed and were replaced with this copy.\n", "muted"))

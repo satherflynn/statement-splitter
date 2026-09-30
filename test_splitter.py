@@ -74,6 +74,38 @@ def check_irregular_bills():
     assert not any("Property Tax Reserve" in c.detail for c in compare(sept, months))
 
 
+def check_bills(tmp: Path, aug: Path):
+    """Bill copies: picked out of a zip, matched to the property they were paid
+    for (by the one payment, or by amount/address when a company is paid on
+    every property), a scanned one read by text recognition, and a bill from
+    a company paid nowhere left in Unsorted pages."""
+    import zipfile
+    import bills
+    from summary import collect_month
+    bill_files = make_sample_packet.build_bills(tmp / "bills")
+    z = tmp / "download.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        for f in [aug] + bill_files:
+            zf.write(f, f"8 Aug 2026/{f.name}")
+    inp = bills.sort_inputs([z])
+    try:
+        assert inp.statement is not None and inp.statement.name == aug.name, inp.statement
+        assert sorted(b.name for b in inp.bills) == ["bill_2208.pdf", "bill_4471.pdf", "bill_9001.pdf"], inp.bills
+        plan = plan_split(inp.statement)
+        month = collect_month(plan, PdfReader(str(inp.statement)))
+        got = {r.source.name: r for r in bills.file_bills(inp.bills, month, tmp / "bills-out")}
+    finally:
+        inp.cleanup()
+    assert got["bill_4471.pdf"].folder == "004-01 123 Main Street", got["bill_4471.pdf"].reason
+    assert got["bill_2208.pdf"].folder == "004-05 4410 Meadow Lane", got["bill_2208.pdf"].reason
+    assert not got["bill_9001.pdf"].matched and got["bill_9001.pdf"].folder == "Unsorted pages"
+    assert got["bill_2208.pdf"].written.name == "2026-08 bill - Ace Plumbing Inc (2208).pdf", got["bill_2208.pdf"].written
+    assert got["bill_9001.pdf"].written.name == "2026-08 bill_9001.pdf", got["bill_9001.pdf"].written
+    for r in got.values():   # copied intact, one page each
+        assert r.written.is_file() and len(PdfReader(str(r.written)).pages) == 1, r.written
+    return got
+
+
 def run_all(paths, dest):
     return [update_summary(dest, plan_split(p), PdfReader(str(p))) for p in paths]
 
@@ -140,6 +172,12 @@ def main():
         assert r2.month_label == "August 2026" and r2.compared_to == "July 2026"
         assert {(c.property, c.what) for c in r2.attention} >= EXPECTED_ATTENTION
 
+        # --- bill copies
+        if __import__("bills").reader_available():
+            check_bills(tmp, aug)
+        else:
+            print("NOTE: text recognition isn't installed on this Mac; bill tests skipped")
+
         # --- every property's ledger reconciles to the cent, every month
         for path in (may, jun, jul, aug):
             reader, p = PdfReader(str(path)), plan_split(path)
@@ -152,7 +190,7 @@ def main():
 
     print(f"OK — August split into {len(EXPECTED_AUGUST)} sections / {plan.total_pages} pages; "
           f"May–July quiet; August raised {len(r_aug.attention)} to look at + {len(r_aug.notes)} smaller differences; "
-          f"ledgers reconcile")
+          f"ledgers reconcile; 3 bill copies filed correctly")
 
 
 if __name__ == "__main__":
