@@ -9,7 +9,7 @@ from pathlib import Path
 import os
 
 APP_NAME = "Statement Splitter"
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 
 
 def resource_base() -> Path:

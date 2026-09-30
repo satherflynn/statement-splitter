@@ -1,5 +1,16 @@
 # What's new
 
+## 1.4 — September 29, 2026
+
+- **Property tax no longer shows up as a missing bill.** Tax installments
+  don't come on a steady schedule, so the app was guessing wrong ("usually
+  paid every 2 months"). A bill is now reported as not paid only if it's a
+  monthly bill, paid in each of the three months before, such as water.
+  Quarterly and irregular bills are never reported as missing; they still
+  appear if their amount changes from the last payment.
+- **Property tax reserve postings are ignored in "What changed."** Money
+  moved into and out of the tax reserve is bookkeeping, not a bill.
+
 ## 1.3 — September 29, 2026
 
 - **"What changed" is much shorter.** Bills are now compared with the last

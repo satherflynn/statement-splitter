@@ -49,11 +49,37 @@ EXPECTED_NOTES = {
 }
 
 
+def _month(month, bills):
+    """A minimal month on record for compare(): one property, just its bills."""
+    ledger = [{"date": f"{month[5:]}/15/{month[:4]}", "payee": payee, "type": typ, "reference": "",
+               "description": desc, "income": None, "expense": amt, "balance": None}
+              for payee, typ, desc, amt in bills]
+    return {"month": month, "month_label": month, "properties": {"004-01 Test": {"ledger": ledger, "units": []}}}
+
+
+def check_irregular_bills():
+    """Sep 2026 feedback: property tax was reported as 'usually paid every 2
+    months'. Tax installments are irregular and the reserve postings are
+    bookkeeping; neither may be reported as a missing bill. A monthly bill
+    that stops must still be reported."""
+    from summary import compare
+    tax = ("Washoe County Treasurer", "Check", "Property Tax - 50606103 Jul", 111.09)
+    reserve = ("Property Tax Reserve", "Check", "Property Tax - July 2026", 32.29)
+    water = ("Somewhere Water Co.", "Payment", "Water - 040160-000", 61.25)
+    months = [_month("2026-05", [tax, reserve, water]), _month("2026-06", [reserve, water]),
+              _month("2026-07", [tax, reserve, water]), _month("2026-08", [reserve, water])]
+    sept = _month("2026-09", [])      # nothing paid in September
+    missing = [c for c in compare(sept, months) if c.what == "Expected bill not paid"]
+    assert [c.detail.split(":")[0] for c in missing] == ["Somewhere Water Co."], [c.detail for c in missing]
+    assert not any("Property Tax Reserve" in c.detail for c in compare(sept, months))
+
+
 def run_all(paths, dest):
     return [update_summary(dest, plan_split(p), PdfReader(str(p))) for p in paths]
 
 
 def main():
+    check_irregular_bills()
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         may, jun, jul, aug = make_sample_packet.build(tmp / "samples")

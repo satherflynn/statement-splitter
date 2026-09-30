@@ -36,8 +36,11 @@ run commands directly.
   (`bill_key`) and compared with the *last payment of that bill* across all
   months on record — never month-to-month, because garbage and property tax
   are quarterly (the owner's first feedback, Sep 2026, was that month-to-month
-  bill lines made the list "too ponderous"). "Expected bill not paid" needs
-  ≥2 prior payments to know the rhythm and every month in between on record.
+  bill lines made the list "too ponderous"). "Expected bill not paid" fires
+  only for a monthly bill (paid in each of the 3 months before, all on
+  record) — v1.3 inferred a rhythm from the last gap and misfired on Washoe
+  tax installments (Aug/Oct/Jan/Mar). "Property Tax Reserve" lines are
+  bookkeeping and excluded from bills.
   A first-ever bill whose payee was paid on most properties this month is a
   portfolio-wide run (tax/garbage), not a "New charge".
 - `app.py` — the Tkinter window. Two cards (PDF, destination), one button,

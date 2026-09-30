@@ -218,6 +218,8 @@ def expense_keys(p: dict) -> dict[str, dict]:
         d = (l.get("description") or "").lower()
         if d.startswith(("management fee", "owner distribution")) or "revers" in (l.get("type") or "").lower():
             continue
+        if _norm(l.get("payee", "")).startswith("property tax reserve"):
+            continue   # money moved into / out of the tax reserve is bookkeeping, not a bill
         key = bill_key(l)
         if key in out:
             out[key]["amount"] = round(out[key]["amount"] + l["expense"], 2)
@@ -336,10 +338,12 @@ def _bill_changes(cur: dict, history: list[dict]) -> list[Change]:
     * Paid this month, never before    -> "New charge" — unless the same payee
       was paid on most properties this month (the quarterly tax or garbage
       run showing up for the first time in a short history, not a one-off).
-    * Not paid this month              -> flag only if the bill's own rhythm
-      says it was due: it has been paid at least twice, every month between
-      its last payment and now is on record, and the gap since the last
-      payment has reached the gap between its last two payments.
+    * Not paid this month              -> flag only for a MONTHLY bill: one
+      paid in each of the three months just before this one (all on record).
+      Quarterly and irregular bills are never reported as missing — Washoe
+      County tax installments fall in Aug, Oct, Jan and Mar (gaps of 2, 3, 2
+      and 5 months), and guessing a rhythm from the last gap misfired
+      ("usually paid every 2 months"), Sep 2026 feedback.
     """
     if not history:
         return []
@@ -382,21 +386,16 @@ def _bill_changes(cur: dict, history: list[dict]) -> list[Change]:
                                   f"{label} — {_fmt(bill['amount'])}; not paid on this property in the "
                                   f"{n} earlier month{'s' if n != 1 else ''} on record.", bill["amount"]))
 
-        for key, occ in sorted(past.items()):
-            if key in cur_bills or len(occ) < 2:
-                continue
-            occ.sort(key=lambda t: t[0])
-            last_idx, when, last = occ[-1]
-            gap = last_idx - occ[-2][0]
-            if gap < 1 or cur_idx - last_idx < gap:
-                continue
-            if any(i not in on_record for i in range(last_idx + 1, cur_idx)):
-                continue   # a month in between isn't on record; it may have been paid then
-            rhythm = "every month" if gap == 1 else f"every {gap} months"
-            out.append(Change(name, "note", "Expected bill not paid",
-                              f"{last['payee']}: {last['description']} — usually paid {rhythm}, last "
-                              f"{_fmt(last['amount'])} in {_month_label(when)}; not paid this month.",
-                              None, last["amount"]))
+        monthly_window = {cur_idx - 1, cur_idx - 2, cur_idx - 3}
+        if monthly_window <= on_record:
+            for key, occ in sorted(past.items()):
+                if key in cur_bills or not monthly_window <= {i for i, _, _ in occ}:
+                    continue
+                _, when, last = max(occ, key=lambda t: t[0])
+                out.append(Change(name, "note", "Expected bill not paid",
+                                  f"{last['payee']}: {last['description']} — paid every month, last "
+                                  f"{_fmt(last['amount'])} in {_month_label(when)}; not paid this month.",
+                                  None, last["amount"]))
     return out
 
 

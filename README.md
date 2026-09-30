@@ -29,7 +29,8 @@ date, with four sheets:
   paid** (identified by payee + account/parcel number), so quarterly bills
   don't show up as "new" or "missing" every month; a bill is flagged when its
   amount changed since its last payment, when it's new on that property, or
-  when its own rhythm says it was due and it wasn't paid.
+  when it's a monthly bill (paid each of the three months before) that
+  wasn't paid. Property tax reserve postings are bookkeeping and ignored.
 - **This month** — every property in two stacked tables (income & expenses,
   then owner payment & balances) with Property and Tenant on both.
 - **History** — property × month grids for the figures worth trending.
